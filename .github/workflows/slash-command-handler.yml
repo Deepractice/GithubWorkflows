@@ -1,0 +1,94 @@
+name: Slash Command Handler
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  handle-command:
+    if: |
+      github.event.issue.pull_request != null &&
+      startsWith(github.event.comment.body, '/')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        
+      - name: Parse Command
+        id: parse
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comment = context.payload.comment.body;
+            const command = comment.split(' ')[0];
+            const args = comment.split(' ').slice(1).join(' ');
+            
+            core.setOutput('command', command);
+            core.setOutput('args', args);
+            
+            // Add reaction to show command received
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'eyes'
+            });
+            
+      - name: Execute Command
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const command = '${{ steps.parse.outputs.command }}';
+            const args = '${{ steps.parse.outputs.args }}';
+            
+            // Command execution logic
+            let response = '';
+            
+            switch(command) {
+              case '/test':
+                response = '🧪 Running tests...\\n';
+                response += '- Unit tests: ⏳ pending\\n';
+                response += '- Integration tests: ⏳ pending\\n';
+                break;
+                
+              case '/changeset':
+                response = `📦 Creating ${args} changeset...`;
+                break;
+                
+              case '/publish':
+                response = `🚀 Publishing to ${args}...`;
+                break;
+                
+              case '/hold':
+                response = '🛑 PR merge blocked';
+                break;
+                
+              case '/help':
+                response = '📚 Available commands:\\n';
+                response += '- `/test [suite]` - Run tests\\n';
+                response += '- `/changeset [patch|minor|major]` - Create changeset\\n';
+                response += '- `/publish npm [tag]` - Publish package\\n';
+                response += '- `/hold` - Block merge\\n';
+                break;
+                
+              default:
+                response = `❌ Unknown command: ${command}\\n`;
+                response += 'Use `/help` to see available commands';
+            }
+            
+            // Post response
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `🤖 **Workflow Bot**\\n\\n${response}`
+            });
+            
+            // Update reaction to show completion
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            });

@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "promptx-dev": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "-f", "@promptx/cli@dev", "mcp-server" ],
+      "env": {}
+    }
+  }
+}
