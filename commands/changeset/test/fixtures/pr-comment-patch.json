@@ -1,0 +1,22 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 100,
+    "pull_request": {
+      "url": "https://api.github.com/repos/test/repo/pulls/100"
+    }
+  },
+  "comment": {
+    "id": 111111,
+    "body": "/changeset patch",
+    "user": {
+      "login": "developer"
+    }
+  },
+  "repository": {
+    "name": "test-repo",
+    "owner": {
+      "login": "test-org"
+    }
+  }
+}

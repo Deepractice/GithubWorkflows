@@ -1,0 +1,22 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 123,
+    "pull_request": {
+      "url": "https://api.github.com/repos/test/repo/pulls/123"
+    }
+  },
+  "comment": {
+    "id": 999999,
+    "body": "/changeset minor Add dark mode support",
+    "user": {
+      "login": "testuser"
+    }
+  },
+  "repository": {
+    "name": "test-repo",
+    "owner": {
+      "login": "test-org"
+    }
+  }
+}

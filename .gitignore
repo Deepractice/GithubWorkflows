@@ -1,0 +1,79 @@
+# ========================================
+# GithubWorkflows Project .gitignore
+# ========================================
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Editor directories and files
+.idea
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+
+# Dependencies (for testing)
+node_modules/
+.pnpm-store/
+
+# Test artifacts
+*.log
+test-results/
+coverage/
+.nyc_output/
+
+# act (GitHub Actions local testing)
+.actrc
+.env.act
+.secrets
+*.tmp
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+build/
+out/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Cache
+.cache/
+.eslintcache
+
+# MCP/PromptX specific
+.mcp.json
+.promptx/
+
+# Claude specific
+.claude/
+CLAUDE.md
+
+# Test event files (contain sensitive data)
+test-event*.json
+
+# Backup files
+*.backup
+*.bak
+*.orig
+
+# macOS
+.AppleDouble
+.LSOverride
+
+# Project specific
+# Keep test fixtures
+!common/commands/*/test/fixtures/*.json
+
+.mcp.json
+.claude
+.promptx

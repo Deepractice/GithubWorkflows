@@ -1,0 +1,22 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 200,
+    "pull_request": {
+      "url": "https://api.github.com/repos/test/repo/pulls/200"
+    }
+  },
+  "comment": {
+    "id": 222222,
+    "body": "/changeset wrong-type",
+    "user": {
+      "login": "developer"
+    }
+  },
+  "repository": {
+    "name": "test-repo",
+    "owner": {
+      "login": "test-org"
+    }
+  }
+}
