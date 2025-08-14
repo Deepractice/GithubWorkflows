@@ -98,7 +98,7 @@ graph LR
 
 **解决方案**：
 
-1. **预发布版本锁定机制（推荐）**
+1. **预发布版本锁定机制（推荐，业界标准）**
    ```bash
    # 首次预发布：锁定版本系列
    /release --prerelease beta  # 1.1.0-beta.1
@@ -127,6 +127,11 @@ graph LR
      "current": "beta.2"
    }
    ```
+   
+   **业界验证**：
+   - **Changesets**：使用 `pre enter/exit` 命令管理预发布模式
+   - **Semantic-release**：通过分支配置锁定预发布版本系列
+   - **Lerna**：提供 `--conventional-graduate` 升级预发布版本
 
 2. **使用 --graduate**
    ```bash
@@ -540,6 +545,68 @@ on:
 ```
 **解决**：检查是否已发布该版本，使用新版本号
 
+## 业界实践参考
+
+### 主流工具的预发布机制对比
+
+| 工具 | 进入预发布 | 版本锁定 | 保留 changesets | 升级正式版 |
+|-----|-----------|---------|----------------|-----------|
+| **Changesets** | `pre enter beta` | ✅ 锁定版本系列 | ✅ 预发布期间保留 | `pre exit` + `version` |
+| **Semantic-release** | 分支配置 | ✅ 自动锁定 | ✅ 自动管理 | 合并到主分支 |
+| **Lerna** | `--conventional-prerelease` | ✅ 版本状态 | ✅ 保留未发布 | `--conventional-graduate` |
+| **我们的方案** | `/release --prerelease` | ✅ 版本锁文件 | ✅ 预发布保留 | `/release --graduate` |
+
+### Changesets 官方实践
+
+```bash
+# 进入预发布模式
+npx changeset pre enter beta
+# 创建版本锁，后续都是 beta 版本
+
+# 发布预发布版本
+npx changeset version  # 1.1.0-beta.1
+npx changeset publish
+
+# 继续预发布
+npx changeset version  # 1.1.0-beta.2
+npx changeset publish
+
+# 退出预发布，发布正式版
+npx changeset pre exit
+npx changeset version  # 1.1.0
+npx changeset publish
+```
+
+**重要警告**（来自官方文档）：
+> "If you decide to do prereleases from the main branch without having a branch for your last stable release, you will block other changes until you exit prerelease mode."
+
+### Semantic-release 配置
+
+```json
+// .releaserc.json
+{
+  "branches": [
+    "main",
+    {
+      "name": "beta",
+      "prerelease": true
+    }
+  ]
+}
+```
+
+特点：
+- beta 分支上的 breaking change → 2.0.0-beta.1
+- 后续提交只增加 beta 计数器（beta.2, beta.3）
+- 合并到 main 自动发布正式版
+
+### 核心共识
+
+1. **版本系列锁定** - 预发布开始后版本号固定
+2. **变更累积不消费** - changesets 在预发布期间保留
+3. **明确的生命周期** - 有清晰的进入/退出机制
+4. **递增式版本号** - beta.1 → beta.2 → beta.3
+
 ## 最佳实践
 
 1. **定期发布**：避免累积过多 changesets
@@ -547,6 +614,7 @@ on:
 3. **预发布测试**：正式版前先发 RC 版本
 4. **自动化集成**：配合 CI/CD 自动发布
 5. **变更可追溯**：每个版本都有完整的 CHANGELOG
+6. **分支隔离**：预发布建议在独立分支进行
 
 ## 许可证
 

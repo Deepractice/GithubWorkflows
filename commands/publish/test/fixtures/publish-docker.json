@@ -1,0 +1,23 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 204,
+    "pull_request": {
+      "url": "https://api.github.com/repos/test-owner/test-repo/pulls/204"
+    }
+  },
+  "comment": {
+    "id": 4,
+    "body": "/publish docker",
+    "user": {
+      "login": "test-user"
+    }
+  },
+  "repository": {
+    "owner": {
+      "login": "test-owner"
+    },
+    "name": "test-repo",
+    "default_branch": "main"
+  }
+}

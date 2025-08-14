@@ -1,0 +1,215 @@
+name: Branch Check
+
+# 检查分支命名和合并方向
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  check-branch-naming:
+    name: Check Branch Naming Convention
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Get branch names
+        id: branch
+        run: |
+          echo "source=${{ github.head_ref }}" >> $GITHUB_OUTPUT
+          echo "target=${{ github.base_ref }}" >> $GITHUB_OUTPUT
+          
+      - name: Check branch naming pattern
+        id: check-naming
+        run: |
+          SOURCE_BRANCH="${{ steps.branch.outputs.source }}"
+          
+          # 定义合法的分支模式
+          VALID_PATTERN="^(main|develop|feature/[a-z0-9-]+|fix/[a-z0-9-]+|hotfix/[a-z0-9-]+|docs/[a-z0-9-]+|chore/[a-z0-9-]+|refactor/[a-z0-9-]+|test/[a-z0-9-]+|style/[a-z0-9-]+|perf/[a-z0-9-]+|release/v[0-9]+\.[0-9]+\.[0-9]+)$"
+          
+          if [[ ! "$SOURCE_BRANCH" =~ $VALID_PATTERN ]]; then
+            echo "❌ 分支名不符合规范: $SOURCE_BRANCH"
+            echo ""
+            echo "请使用以下格式之一:"
+            echo "  - feature/description  (新功能)"
+            echo "  - fix/description      (问题修复)"
+            echo "  - docs/description     (文档更新)"
+            echo "  - chore/description    (日常维护)"
+            echo "  - hotfix/description   (紧急修复)"
+            echo ""
+            echo "示例:"
+            echo "  - feature/user-authentication"
+            echo "  - fix/memory-leak"
+            echo "  - docs/api-reference"
+            exit 1
+          fi
+          
+          echo "✅ 分支名符合规范: $SOURCE_BRANCH"
+          
+      - name: Comment on PR if failed
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = '${{ steps.branch.outputs.source }}';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `❌ **分支命名不规范**\n\n当前分支名: \`${branch}\`\n\n请使用符合规范的分支名，例如:\n- \`feature/user-login\`\n- \`fix/memory-leak\`\n- \`docs/api-guide\`\n\n查看[分支命名规范](../branches/README.md#分支命名规范)`
+            });
+
+  check-merge-direction:
+    name: Check Merge Direction
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Get branch info
+        id: branch
+        run: |
+          echo "source=${{ github.head_ref }}" >> $GITHUB_OUTPUT
+          echo "target=${{ github.base_ref }}" >> $GITHUB_OUTPUT
+          
+      - name: Validate merge direction
+        id: check-merge
+        run: |
+          SOURCE="${{ steps.branch.outputs.source }}"
+          TARGET="${{ steps.branch.outputs.target }}"
+          
+          echo "检查合并方向: $SOURCE → $TARGET"
+          
+          # 定义允许的合并规则
+          VALID=false
+          REASON=""
+          
+          # feature/* 和 fix/* 只能合并到 develop
+          if [[ "$SOURCE" =~ ^(feature|fix|chore|refactor|test|style|perf)/ ]]; then
+            if [[ "$TARGET" == "develop" ]] || [[ "$TARGET" == "dev" ]]; then
+              VALID=true
+              REASON="功能分支可以合并到 develop"
+            else
+              REASON="功能分支只能合并到 develop，不能直接合并到 $TARGET"
+            fi
+            
+          # docs/* 可以合并到 develop 或 main
+          elif [[ "$SOURCE" =~ ^docs/ ]]; then
+            if [[ "$TARGET" == "develop" ]] || [[ "$TARGET" == "main" ]] || [[ "$TARGET" == "master" ]]; then
+              VALID=true
+              REASON="文档分支可以合并到 develop 或 main"
+            else
+              REASON="文档分支只能合并到 develop 或 main"
+            fi
+            
+          # hotfix/* 可以合并到 main
+          elif [[ "$SOURCE" =~ ^hotfix/ ]]; then
+            if [[ "$TARGET" == "main" ]] || [[ "$TARGET" == "master" ]]; then
+              VALID=true
+              REASON="紧急修复可以直接合并到 main"
+            else
+              REASON="紧急修复应该合并到 main，而不是 $TARGET"
+            fi
+            
+          # develop 可以合并到 main
+          elif [[ "$SOURCE" == "develop" ]] || [[ "$SOURCE" == "dev" ]]; then
+            if [[ "$TARGET" == "main" ]] || [[ "$TARGET" == "master" ]]; then
+              VALID=true
+              REASON="develop 可以合并到 main 进行发布"
+            else
+              REASON="develop 只能合并到 main"
+            fi
+            
+          # release/* 可以合并到 main
+          elif [[ "$SOURCE" =~ ^release/ ]]; then
+            if [[ "$TARGET" == "main" ]] || [[ "$TARGET" == "master" ]]; then
+              VALID=true
+              REASON="发布分支可以合并到 main"
+            else
+              REASON="发布分支应该合并到 main"
+            fi
+            
+          else
+            REASON="未知的分支类型: $SOURCE"
+          fi
+          
+          if [[ "$VALID" == "true" ]]; then
+            echo "✅ 合并方向正确: $REASON"
+          else
+            echo "❌ 合并方向错误: $REASON"
+            exit 1
+          fi
+          
+      - name: Comment on PR if failed
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const source = '${{ steps.branch.outputs.source }}';
+            const target = '${{ steps.branch.outputs.target }}';
+            
+            let suggestion = '';
+            if (source.startsWith('feature/') || source.startsWith('fix/')) {
+              suggestion = '请将此 PR 的目标分支改为 `develop`';
+            } else if (source.startsWith('hotfix/')) {
+              suggestion = '紧急修复应该合并到 `main`';
+            }
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `❌ **合并方向不正确**\n\n当前: \`${source}\` → \`${target}\`\n\n${suggestion}\n\n查看[分支合并规则](../branches/README.md#合并规则)`
+            });
+
+  add-labels:
+    name: Auto Add Labels
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Add labels based on branch
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = context.payload.pull_request.head.ref;
+            const labels = [];
+            
+            // 根据分支类型添加标签
+            if (branch.startsWith('feature/')) {
+              labels.push('type: feature');
+            } else if (branch.startsWith('fix/')) {
+              labels.push('type: bug');
+            } else if (branch.startsWith('docs/')) {
+              labels.push('type: docs');
+            } else if (branch.startsWith('chore/')) {
+              labels.push('type: chore');
+            } else if (branch.startsWith('hotfix/')) {
+              labels.push('type: hotfix', 'priority: high');
+            }
+            
+            // 根据目标分支添加标签
+            const target = context.payload.pull_request.base.ref;
+            if (target === 'main' || target === 'master') {
+              labels.push('target: production');
+            } else if (target === 'develop') {
+              labels.push('target: develop');
+            }
+            
+            // 根据文件数量添加大小标签
+            const files = context.payload.pull_request.changed_files;
+            if (files <= 10) {
+              labels.push('size: S');
+            } else if (files <= 30) {
+              labels.push('size: M');
+            } else if (files <= 100) {
+              labels.push('size: L');
+            } else {
+              labels.push('size: XL');
+            }
+            
+            if (labels.length > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: labels
+              });
+              
+              console.log(`添加标签: ${labels.join(', ')}`);
+            }

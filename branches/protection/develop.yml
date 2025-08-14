@@ -1,0 +1,113 @@
+# Develop 分支保护规则
+# 中等保护，用于集成测试
+name: develop
+pattern: develop|dev  # 支持多个名称
+
+protection_rules:
+  # ==================
+  # Pull Request 设置
+  # ==================
+  require_pull_request_reviews:
+    required_approving_review_count: 1      # 需要 1 个审核
+    dismiss_stale_reviews: true              # 新提交时取消旧审核
+    require_code_owner_reviews: false       # 不强制需要代码所有者
+    require_last_push_approval: false       
+    dismissal_restrictions:
+      users: []
+      teams: ["developers"]
+      apps: []
+
+  # ==================
+  # 状态检查
+  # ==================
+  required_status_checks:
+    strict: false                            # 不需要基于最新代码
+    contexts:                                # 必须通过的检查
+      # 基础测试
+      - "continuous-integration/test"
+      - "continuous-integration/lint"
+      - "continuous-integration/build"
+      # 版本管理
+      - "changeset-bot"
+
+  # ==================
+  # 合并设置
+  # ==================
+  require_linear_history: false             # 不要求线性历史
+  allow_squash_merge: true                  # 允许 squash 合并
+  allow_merge_commit: true                  # 允许 merge commit
+  allow_rebase_merge: true                  # 允许 rebase 合并
+  allow_auto_merge: true                    # 允许自动合并
+  delete_branch_on_merge: true              # 合并后删除分支
+  
+  # ==================
+  # 推送限制
+  # ==================
+  restrict_pushes:
+    enforce_admins: false                   # 管理员不需要遵守规则
+    push_restrictions:                      # 谁可以推送
+      users: []
+      teams: ["developers", "maintainers"]
+      apps: ["github-actions[bot]", "dependabot[bot]"]
+  
+  # ==================
+  # 其他保护
+  # ==================
+  allow_force_pushes: false                 # 禁止强制推送
+  allow_deletions: false                    # 禁止删除分支
+  lock_branch: false                        # 不锁定分支
+  require_conversation_resolution: false    # 不强制解决对话
+  require_deployments: false                # 不需要部署
+  
+# ==================
+# 自动化规则
+# ==================
+automation:
+  # 自动合并
+  auto_merge:
+    enabled: true
+    allowed_merge_methods: ["squash", "merge"]
+    conditions:
+      - all_checks_passed: true
+      - approvals_count: ">= 1"
+      - labels_include: ["automerge"]
+      - labels_exclude: ["do-not-merge", "wip", "needs-review"]
+  
+  # 自动部署到测试环境
+  auto_deploy:
+    enabled: true
+    environment: staging
+    trigger: push
+    url: "https://staging.example.com"
+    
+  # 标签管理
+  auto_label:
+    # 自动添加 changeset 状态
+    changeset_status:
+      has_changeset: "changeset: added"
+      no_changeset: "changeset: missing"
+    
+    # PR 类型标签
+    pr_type:
+      feature: ["feature/*", "feat/*"]
+      bugfix: ["fix/*", "bugfix/*", "hotfix/*"]
+      docs: ["docs/*"]
+      chore: ["chore/*", "deps/*"]
+      
+  # 分支同步
+  sync:
+    from: main
+    auto_sync: true
+    sync_on:
+      - main_merge
+      - hotfix_merge
+    create_pr: true
+    pr_title: "🔄 Sync develop with main"
+    pr_labels: ["sync", "automerge"]
+    
+  # 测试报告
+  test_report:
+    enabled: true
+    comment_on_pr: true
+    fail_on_decrease: true
+    coverage_threshold: 70

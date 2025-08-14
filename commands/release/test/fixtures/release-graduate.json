@@ -1,0 +1,21 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 103,
+    "pull_request": null
+  },
+  "comment": {
+    "id": 4,
+    "body": "/release --graduate",
+    "user": {
+      "login": "test-user"
+    }
+  },
+  "repository": {
+    "owner": {
+      "login": "test-owner"
+    },
+    "name": "test-repo",
+    "default_branch": "main"
+  }
+}

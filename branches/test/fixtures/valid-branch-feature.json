@@ -1,0 +1,22 @@
+{
+  "action": "opened",
+  "pull_request": {
+    "number": 1,
+    "head": {
+      "ref": "feature/user-authentication"
+    },
+    "base": {
+      "ref": "develop"
+    },
+    "changed_files": 5,
+    "user": {
+      "login": "developer"
+    }
+  },
+  "repository": {
+    "owner": {
+      "login": "test-owner"
+    },
+    "name": "test-repo"
+  }
+}

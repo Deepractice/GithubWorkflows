@@ -7,9 +7,8 @@ RED := \033[0;31m
 NC := \033[0m
 
 # Act common options
-ACT_OPTS := --container-architecture linux/amd64 \
-           -P ubuntu-latest=catthehacker/ubuntu:act-latest \
-           --env GITHUB_TOKEN=fake-token \
+# .actrc will be found automatically from project root
+ACT_OPTS := --env GITHUB_TOKEN=fake-token \
            --no-recurse \
            --rm \
            --dryrun
