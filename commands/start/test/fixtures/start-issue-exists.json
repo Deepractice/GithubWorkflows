@@ -1,0 +1,41 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 100,
+    "title": "Already started feature",
+    "state": "open",
+    "labels": [
+      {
+        "name": "type: feature",
+        "color": "0e8a16",
+        "description": "New feature"
+      },
+      {
+        "name": "in-progress",
+        "color": "fbca04",
+        "description": "Work in progress"
+      }
+    ],
+    "assignees": [
+      {
+        "login": "developer"
+      }
+    ],
+    "pull_request": null,
+    "body": "This feature already has a branch created"
+  },
+  "comment": {
+    "id": 5,
+    "body": "/start issue 100",
+    "user": {
+      "login": "developer"
+    }
+  },
+  "repository": {
+    "name": "test-repo",
+    "owner": {
+      "login": "test-org"
+    },
+    "default_branch": "main"
+  }
+}

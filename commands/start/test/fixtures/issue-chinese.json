@@ -1,0 +1,14 @@
+{
+  "number": 124,
+  "title": "用户登录功能优化",
+  "state": "open",
+  "labels": [
+    {
+      "name": "type: enhancement",
+      "color": "a2eeef",
+      "description": "Enhancement"
+    }
+  ],
+  "assignees": [],
+  "body": "需要优化现有的用户登录流程"
+}

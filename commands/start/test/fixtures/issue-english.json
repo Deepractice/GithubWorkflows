@@ -1,0 +1,14 @@
+{
+  "number": 123,
+  "title": "User login feature",
+  "state": "open",
+  "labels": [
+    {
+      "name": "type: feature",
+      "color": "0e8a16",
+      "description": "New feature"
+    }
+  ],
+  "assignees": [],
+  "body": "We need to implement user login functionality"
+}

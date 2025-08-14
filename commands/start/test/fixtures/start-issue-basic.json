@@ -1,0 +1,35 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 123,
+    "title": "User login feature",
+    "state": "open",
+    "labels": [
+      {
+        "name": "type: feature",
+        "color": "0e8a16",
+        "description": "New feature"
+      },
+      {
+        "name": "priority: medium",
+        "color": "fbca04",
+        "description": "Medium priority"
+      }
+    ],
+    "assignees": [],
+    "pull_request": null
+  },
+  "comment": {
+    "id": 1,
+    "body": "/start issue 123",
+    "user": {
+      "login": "developer"
+    }
+  },
+  "repository": {
+    "name": "test-repo",
+    "owner": {
+      "login": "test-org"
+    }
+  }
+}

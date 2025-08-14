@@ -1,0 +1,26 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 999,
+    "title": "Test issue",
+    "state": "open",
+    "labels": [],
+    "assignees": [],
+    "pull_request": null,
+    "body": "Test issue for invalid command"
+  },
+  "comment": {
+    "id": 6,
+    "body": "/start",
+    "user": {
+      "login": "developer"
+    }
+  },
+  "repository": {
+    "name": "test-repo",
+    "owner": {
+      "login": "test-org"
+    },
+    "default_branch": "main"
+  }
+}

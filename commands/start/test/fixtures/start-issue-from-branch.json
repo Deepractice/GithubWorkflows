@@ -1,0 +1,35 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 456,
+    "title": "Fix memory leak in cache module",
+    "state": "open",
+    "labels": [
+      {
+        "name": "type: bug",
+        "color": "d73a4a",
+        "description": "Bug fix"
+      },
+      {
+        "name": "priority: high",
+        "color": "d93f0b",
+        "description": "High priority"
+      }
+    ],
+    "assignees": [],
+    "pull_request": null
+  },
+  "comment": {
+    "id": 2,
+    "body": "/start issue 456 --from-branch develop",
+    "user": {
+      "login": "developer"
+    }
+  },
+  "repository": {
+    "name": "test-repo",
+    "owner": {
+      "login": "test-org"
+    }
+  }
+}

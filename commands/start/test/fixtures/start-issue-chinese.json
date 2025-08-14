@@ -1,0 +1,37 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 124,
+    "title": "用户登录功能优化",
+    "state": "open",
+    "labels": [
+      {
+        "name": "type: enhancement",
+        "color": "a2eeef",
+        "description": "Enhancement"
+      },
+      {
+        "name": "priority: medium",
+        "color": "fbca04",
+        "description": "Medium priority"
+      }
+    ],
+    "assignees": [],
+    "pull_request": null,
+    "body": "需要优化现有的用户登录流程，提升用户体验"
+  },
+  "comment": {
+    "id": 3,
+    "body": "/start issue 124",
+    "user": {
+      "login": "developer"
+    }
+  },
+  "repository": {
+    "name": "test-repo",
+    "owner": {
+      "login": "test-org"
+    },
+    "default_branch": "main"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "number": 126,
+  "title": "Add user profile page",
+  "state": "open",
+  "labels": [
+    {
+      "name": "type: feature",
+      "color": "0e8a16",
+      "description": "New feature"
+    },
+    {
+      "name": "priority: high",
+      "color": "d93f0b",
+      "description": "High priority"
+    },
+    {
+      "name": "good first issue",
+      "color": "7057ff",
+      "description": "Good for newcomers"
+    }
+  ],
+  "assignees": [],
+  "body": "We need a user profile page"
+}
