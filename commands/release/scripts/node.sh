@@ -30,8 +30,12 @@ if [ -f "package.json" ]; then
   
   # Update pnpm-lock.yaml if exists
   if [ -f "pnpm-lock.yaml" ]; then
-    pnpm install --lockfile-only --silent
-    echo "Updated pnpm-lock.yaml"
+    if command -v pnpm &> /dev/null; then
+      pnpm install --lockfile-only --silent
+      echo "Updated pnpm-lock.yaml"
+    else
+      echo "Warning: pnpm-lock.yaml exists but pnpm is not installed"
+    fi
   fi
 fi
 
