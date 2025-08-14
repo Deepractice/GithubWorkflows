@@ -1,0 +1,441 @@
+name: Release Command
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  handle-release:
+    if: |
+      (github.event.issue.pull_request || !github.event.issue.pull_request) &&
+      startsWith(github.event.comment.body, '/release')
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      packages: write
+    
+    steps:
+      - name: Add reaction
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'eyes'
+            });
+      
+      - name: Check permissions
+        id: permissions
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const username = '${{ github.event.comment.user.login }}';
+            
+            try {
+              const { data: perm } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                username: username
+              });
+              
+              const hasPermission = ['admin', 'maintain', 'write'].includes(perm.permission);
+              core.setOutput('allowed', hasPermission);
+              
+              if (!hasPermission) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: `❌ **Permission denied**\n\n@${username} does not have permission to create releases. Only maintainers can use the \`/release\` command.`
+                });
+                
+                await github.rest.reactions.createForIssueComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: context.payload.comment.id,
+                  content: '-1'
+                });
+              }
+            } catch (error) {
+              core.setOutput('allowed', false);
+              console.error('Permission check failed:', error);
+            }
+      
+      - name: Determine branch
+        if: steps.permissions.outputs.allowed == 'true'
+        id: branch
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let branch;
+            
+            // Check if this is a PR comment
+            if (context.payload.issue.pull_request) {
+              const pr = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number
+              });
+              
+              branch = pr.data.base.ref;
+              core.setOutput('is_pr', 'true');
+              core.setOutput('pr_number', context.issue.number);
+            } else {
+              // Issue comment - use default branch
+              branch = context.payload.repository.default_branch;
+              core.setOutput('is_pr', 'false');
+            }
+            
+            core.setOutput('branch', branch);
+            console.log(`Will release from branch: ${branch}`);
+      
+      - name: Checkout branch
+        if: steps.permissions.outputs.allowed == 'true'
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ steps.branch.outputs.branch }}
+          fetch-depth: 0
+      
+      - name: Parse command
+        if: steps.permissions.outputs.allowed == 'true'
+        id: parse
+        shell: bash
+        run: |
+          COMMAND="${{ github.event.comment.body }}"
+          echo "Raw command: $COMMAND"
+          
+          # Default values
+          echo "valid=true" >> $GITHUB_OUTPUT
+          echo "preview=false" >> $GITHUB_OUTPUT
+          echo "graduate=false" >> $GITHUB_OUTPUT
+          echo "prerelease=" >> $GITHUB_OUTPUT
+          echo "force_version=" >> $GITHUB_OUTPUT
+          
+          # Parse flags
+          if [[ "$COMMAND" =~ --preview ]]; then
+            echo "preview=true" >> $GITHUB_OUTPUT
+          fi
+          
+          if [[ "$COMMAND" =~ --graduate ]]; then
+            echo "graduate=true" >> $GITHUB_OUTPUT
+          fi
+          
+          if [[ "$COMMAND" =~ --prerelease[[:space:]]+([a-z]+) ]]; then
+            echo "prerelease=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
+          fi
+          
+          if [[ "$COMMAND" =~ --force-version[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+[^ ]*) ]]; then
+            echo "force_version=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Check version lock
+        if: steps.permissions.outputs.allowed == 'true'
+        id: lock
+        shell: bash
+        run: |
+          LOCK_FILE=".changeset/prerelease.lock"
+          
+          if [ -f "$LOCK_FILE" ]; then
+            echo "has_lock=true" >> $GITHUB_OUTPUT
+            LOCKED_VERSION=$(jq -r '.version' "$LOCK_FILE")
+            LOCKED_PRERELEASE=$(jq -r '.prerelease' "$LOCK_FILE")
+            LOCKED_COUNTER=$(jq -r '.counter' "$LOCK_FILE")
+            
+            echo "locked_version=$LOCKED_VERSION" >> $GITHUB_OUTPUT
+            echo "locked_prerelease=$LOCKED_PRERELEASE" >> $GITHUB_OUTPUT
+            echo "locked_counter=$LOCKED_COUNTER" >> $GITHUB_OUTPUT
+            echo "Found version lock: $LOCKED_VERSION-$LOCKED_PRERELEASE.$LOCKED_COUNTER"
+          else
+            echo "has_lock=false" >> $GITHUB_OUTPUT
+            echo "No version lock found"
+          fi
+      
+      - name: Detect project type
+        if: steps.permissions.outputs.allowed == 'true'
+        id: detect
+        shell: bash
+        run: |
+          chmod +x ./commands/release/scripts/detect.sh
+          PROJECT_TYPE=$(./commands/release/scripts/detect.sh)
+          echo "project_type=$PROJECT_TYPE" >> $GITHUB_OUTPUT
+          echo "Detected project type: $PROJECT_TYPE"
+      
+      - name: Check changesets
+        if: |
+          steps.permissions.outputs.allowed == 'true' &&
+          steps.parse.outputs.graduate != 'true'
+        id: changesets
+        shell: bash
+        run: |
+          PROJECT_TYPE="${{ steps.detect.outputs.project_type }}"
+          HAS_CHANGESETS=false
+          CHANGESET_COUNT=0
+          
+          case "$PROJECT_TYPE" in
+            node)
+              if [ -d ".changeset" ]; then
+                CHANGESET_COUNT=$(find .changeset -name "*.md" -not -name "README.md" 2>/dev/null | wc -l)
+                if [ "$CHANGESET_COUNT" -gt 0 ]; then
+                  HAS_CHANGESETS=true
+                fi
+              fi
+              ;;
+            python|go|java|rust)
+              if [ -d ".changes" ]; then
+                CHANGESET_COUNT=$(find .changes -type f 2>/dev/null | wc -l)
+                if [ "$CHANGESET_COUNT" -gt 0 ]; then
+                  HAS_CHANGESETS=true
+                fi
+              fi
+              ;;
+          esac
+          
+          echo "has_changesets=$HAS_CHANGESETS" >> $GITHUB_OUTPUT
+          echo "count=$CHANGESET_COUNT" >> $GITHUB_OUTPUT
+          
+          if [ "$HAS_CHANGESETS" = "true" ]; then
+            echo "Found $CHANGESET_COUNT changesets"
+          else
+            echo "No changesets found"
+          fi
+      
+      - name: Calculate version
+        if: |
+          steps.permissions.outputs.allowed == 'true' &&
+          (steps.changesets.outputs.has_changesets == 'true' || steps.parse.outputs.graduate == 'true')
+        id: version
+        shell: bash
+        run: |
+          PROJECT_TYPE="${{ steps.detect.outputs.project_type }}"
+          PRERELEASE="${{ steps.parse.outputs.prerelease }}"
+          GRADUATE="${{ steps.parse.outputs.graduate }}"
+          FORCE_VERSION="${{ steps.parse.outputs.force_version }}"
+          HAS_LOCK="${{ steps.lock.outputs.has_lock }}"
+          
+          # Export for scripts
+          export PROJECT_TYPE
+          export PRERELEASE
+          export GRADUATE
+          export FORCE_VERSION
+          export HAS_LOCK
+          
+          if [ "$HAS_LOCK" = "true" ]; then
+            export LOCKED_VERSION="${{ steps.lock.outputs.locked_version }}"
+            export LOCKED_PRERELEASE="${{ steps.lock.outputs.locked_prerelease }}"
+            export LOCKED_COUNTER="${{ steps.lock.outputs.locked_counter }}"
+          fi
+          
+          # Run version calculation script
+          chmod +x ./commands/release/scripts/calculate-version.sh
+          source ./commands/release/scripts/calculate-version.sh
+          
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+          echo "Calculated version: $NEW_VERSION"
+      
+      - name: Preview mode
+        if: |
+          steps.permissions.outputs.allowed == 'true' &&
+          steps.parse.outputs.preview == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = '${{ steps.version.outputs.version }}';
+            const changesetCount = '${{ steps.changesets.outputs.count }}';
+            const projectType = '${{ steps.detect.outputs.project_type }}';
+            const isPrerelease = '${{ steps.version.outputs.is_prerelease }}';
+            
+            let message = `🔍 **Release Preview**\n\n`;
+            message += `**Version**: ${version || 'Unable to calculate'}\n`;
+            message += `**Type**: ${isPrerelease === 'true' ? 'Pre-release' : 'Stable release'}\n`;
+            message += `**Project**: ${projectType}\n`;
+            message += `**Changesets**: ${changesetCount || '0'}\n\n`;
+            
+            if (!version) {
+              message += `⚠️ Cannot proceed: ${changesetCount === '0' ? 'No changesets found' : 'Unable to calculate version'}`;
+            } else {
+              message += `This is a preview only. Remove \`--preview\` to execute the release.`;
+            }
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: message
+            });
+      
+      - name: Execute release
+        if: |
+          steps.permissions.outputs.allowed == 'true' &&
+          steps.parse.outputs.preview != 'true' &&
+          (steps.changesets.outputs.has_changesets == 'true' || steps.parse.outputs.graduate == 'true')
+        id: release
+        shell: bash
+        run: |
+          PROJECT_TYPE="${{ steps.detect.outputs.project_type }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          IS_PRERELEASE="${{ steps.version.outputs.is_prerelease }}"
+          PRERELEASE="${{ steps.parse.outputs.prerelease }}"
+          
+          # Export for scripts
+          export PROJECT_TYPE
+          export VERSION
+          export IS_PRERELEASE
+          export PRERELEASE
+          export BRANCH="${{ steps.branch.outputs.branch }}"
+          
+          # Run release script
+          chmod +x ./commands/release/scripts/${PROJECT_TYPE}.sh
+          ./commands/release/scripts/${PROJECT_TYPE}.sh
+          
+          echo "success=true" >> $GITHUB_OUTPUT
+      
+      - name: Update or create version lock
+        if: |
+          steps.permissions.outputs.allowed == 'true' &&
+          steps.parse.outputs.preview != 'true' &&
+          steps.parse.outputs.prerelease != '' &&
+          steps.release.outputs.success == 'true'
+        shell: bash
+        run: |
+          LOCK_FILE=".changeset/prerelease.lock"
+          VERSION="${{ steps.version.outputs.version }}"
+          PRERELEASE="${{ steps.parse.outputs.prerelease }}"
+          
+          # Extract base version and counter
+          if [[ "$VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-([a-z]+)\.([0-9]+)$ ]]; then
+            BASE_VERSION="${BASH_REMATCH[1]}"
+            COUNTER="${BASH_REMATCH[3]}"
+            
+            # Create or update lock file
+            cat > "$LOCK_FILE" << EOF
+          {
+            "version": "$BASE_VERSION",
+            "prerelease": "$PRERELEASE",
+            "counter": $COUNTER,
+            "createdAt": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          }
+          EOF
+            
+            git add "$LOCK_FILE"
+            git commit -m "chore: update version lock to $VERSION"
+            git push
+          fi
+      
+      - name: Clean changesets and remove lock
+        if: |
+          steps.permissions.outputs.allowed == 'true' &&
+          steps.parse.outputs.preview != 'true' &&
+          steps.parse.outputs.prerelease == '' &&
+          steps.release.outputs.success == 'true'
+        shell: bash
+        run: |
+          PROJECT_TYPE="${{ steps.detect.outputs.project_type }}"
+          
+          # Clean changesets based on project type
+          case "$PROJECT_TYPE" in
+            node)
+              find .changeset -name "*.md" -not -name "README.md" -delete
+              ;;
+            *)
+              rm -rf .changes/*
+              ;;
+          esac
+          
+          # Remove version lock if exists
+          if [ -f ".changeset/prerelease.lock" ]; then
+            rm ".changeset/prerelease.lock"
+          fi
+          
+          git add .
+          git commit -m "chore: clean changesets after release"
+          git push
+      
+      - name: Create GitHub Release
+        if: |
+          steps.permissions.outputs.allowed == 'true' &&
+          steps.parse.outputs.preview != 'true' &&
+          steps.release.outputs.success == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          IS_PRERELEASE="${{ steps.version.outputs.is_prerelease }}"
+          
+          # Read changelog content
+          CHANGELOG_CONTENT="Release $VERSION"
+          if [ -f "CHANGELOG.md" ]; then
+            # Extract content for this version
+            CHANGELOG_CONTENT=$(awk "/## $VERSION/,/^## [0-9]/" CHANGELOG.md | head -n -1)
+          fi
+          
+          # Create release
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            gh release create "v$VERSION" \
+              --title "v$VERSION" \
+              --notes "$CHANGELOG_CONTENT" \
+              --prerelease \
+              --target "${{ steps.branch.outputs.branch }}"
+          else
+            gh release create "v$VERSION" \
+              --title "v$VERSION" \
+              --notes "$CHANGELOG_CONTENT" \
+              --target "${{ steps.branch.outputs.branch }}"
+          fi
+      
+      - name: Post success comment
+        if: |
+          steps.permissions.outputs.allowed == 'true' &&
+          steps.parse.outputs.preview != 'true' &&
+          steps.release.outputs.success == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = '${{ steps.version.outputs.version }}';
+            const isPrerelease = '${{ steps.version.outputs.is_prerelease }}';
+            const emoji = isPrerelease === 'true' ? '🏷️' : '🚀';
+            const type = isPrerelease === 'true' ? 'Pre-release' : 'Release';
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `${emoji} **${type} v${version} created successfully!**\n\nView the release: https://github.com/${context.repo.owner}/${context.repo.repo}/releases/tag/v${version}`
+            });
+            
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            });
+      
+      - name: Handle no changesets
+        if: |
+          steps.permissions.outputs.allowed == 'true' &&
+          steps.parse.outputs.preview != 'true' &&
+          steps.changesets.outputs.has_changesets != 'true' &&
+          steps.parse.outputs.graduate != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `⚠️ **No changesets found**\n\nThere are no pending changesets to release. Please create changesets first using \`/changeset\` command.\n\nTo graduate a prerelease to stable, use \`/release --graduate\`.`
+            });
+            
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'confused'
+            });

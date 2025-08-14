@@ -1,0 +1,69 @@
+# Node.js 开源项目解决方案
+name: node-opensource
+version: 1.0.0
+description: Node.js 开源项目的 GitHub 工作流
+
+# 组件配置
+components:
+  # 使用双主线分支策略
+  branch_strategy: dual-flow
+  
+  # 启用的命令
+  commands:
+    - start      # /start issue - 开始开发
+    - test       # /test - 运行测试
+    - changeset  # /changeset - 声明变更
+    - release    # /release - 创建版本
+    - publish    # /publish - 发布到 NPM
+  
+  # Issue 标签
+  labels:
+    types:
+      - "type: feature"
+      - "type: bug"
+      - "type: enhancement"
+      - "type: docs"
+      - "type: refactor"
+    priorities:
+      - "priority: critical"
+      - "priority: high"
+      - "priority: medium"
+      - "priority: low"
+
+# 工作流配置
+workflows:
+  ci:
+    on:
+      - push
+      - pull_request
+    branches:
+      - main
+      - develop
+  
+  cd:
+    on:
+      - release
+    branches:
+      - main
+
+# 环境配置
+environment:
+  secrets:
+    - name: NPM_TOKEN
+      description: NPM 发布令牌
+  
+  variables:
+    - name: NODE_VERSION
+      value: "20"
+
+# 项目配置
+project:
+  package_manager: npm
+  test_framework: jest
+  build_tool: tsc
+
+# 输出配置
+output:
+  path: .github
+  merge_workflows: true
+  overwrite: false

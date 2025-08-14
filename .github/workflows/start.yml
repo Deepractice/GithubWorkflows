@@ -1,0 +1,240 @@
+name: Start Command
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  start-issue:
+    if: |
+      github.event.issue.pull_request == null &&
+      startsWith(github.event.comment.body, '/start issue')
+    runs-on: ubuntu-latest
+    
+    permissions:
+      issues: write
+      contents: write
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          
+      - name: Parse command
+        id: parse
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comment = context.payload.comment.body;
+            const match = comment.match(/\/start issue (\d+)(?:\s+--from-branch\s+(\S+))?/);
+            
+            if (!match) {
+              core.setFailed('Invalid command format');
+              return;
+            }
+            
+            const issueNumber = match[1];
+            const fromBranch = match[2] || 'main';
+            
+            core.setOutput('issue_number', issueNumber);
+            core.setOutput('from_branch', fromBranch);
+            
+            console.log(`📋 Issue: #${issueNumber}`);
+            console.log(`📌 Base branch: ${fromBranch}`);
+            
+      - name: Get issue details
+        id: issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = ${{ steps.parse.outputs.issue_number }};
+            
+            // Get issue details
+            const { data: issue } = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(issueNumber)
+            });
+            
+            // Extract type from labels
+            const typeLabel = issue.labels.find(l => l.name.startsWith('type:'));
+            const priorityLabel = issue.labels.find(l => l.name.startsWith('priority:'));
+            
+            const type = typeLabel ? typeLabel.name.replace('type: ', '') : 'feature';
+            const priority = priorityLabel ? priorityLabel.name.replace('priority: ', '') : 'medium';
+            
+            // Determine branch prefix
+            const prefixMap = {
+              'bug': 'fix',
+              'feature': 'feature',
+              'enhancement': 'feature',
+              'docs': 'docs',
+              'refactor': 'chore'
+            };
+            const prefix = prefixMap[type] || 'feature';
+            
+            // Check if title contains non-ASCII characters
+            const hasNonAscii = /[^\x00-\x7F]/.test(issue.title);
+            let slug = 'issue';
+            
+            if (!hasNonAscii) {
+              // Convert title to slug
+              slug = issue.title
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+                .substring(0, 30);
+            }
+            
+            const branchName = `${prefix}/#${issueNumber}-${slug}`;
+            
+            core.setOutput('branch_name', branchName);
+            core.setOutput('issue_title', issue.title);
+            core.setOutput('issue_type', type);
+            core.setOutput('issue_priority', priority);
+            
+            console.log(`📋 Title: ${issue.title}`);
+            console.log(`🏷️ Type: ${type}`);
+            console.log(`🎯 Priority: ${priority}`);
+            console.log(`🌿 Branch: ${branchName}`);
+            
+            return issue;
+            
+      - name: Create and push branch
+        id: branch
+        run: |
+          FROM_BRANCH="${{ steps.parse.outputs.from_branch }}"
+          NEW_BRANCH="${{ steps.issue.outputs.branch_name }}"
+          
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Fetch latest
+          git fetch origin
+          
+          # Check if from branch exists
+          if ! git show-ref --verify --quiet "refs/remotes/origin/${FROM_BRANCH}"; then
+            echo "❌ Base branch '${FROM_BRANCH}' does not exist"
+            exit 1
+          fi
+          
+          # Check if new branch already exists
+          if git show-ref --verify --quiet "refs/remotes/origin/${NEW_BRANCH}"; then
+            echo "⚠️ Branch '${NEW_BRANCH}' already exists"
+            echo "branch_exists=true" >> $GITHUB_OUTPUT
+          else
+            # Create new branch from base
+            git checkout -b "${NEW_BRANCH}" "origin/${FROM_BRANCH}"
+            
+            # Push the new branch
+            git push -u origin "${NEW_BRANCH}"
+            
+            echo "✅ Branch created and pushed"
+            echo "branch_exists=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "branch_name=${NEW_BRANCH}" >> $GITHUB_OUTPUT
+          
+      - name: Update issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = ${{ steps.parse.outputs.issue_number }};
+            const branchName = '${{ steps.issue.outputs.branch_name }}';
+            const fromBranch = '${{ steps.parse.outputs.from_branch }}';
+            const branchExists = '${{ steps.branch.outputs.branch_exists }}' === 'true';
+            
+            // Add in-progress label if not exists
+            try {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: parseInt(issueNumber),
+                labels: ['in-progress']
+              });
+            } catch (e) {
+              console.log('Note: in-progress label may not exist');
+            }
+            
+            // Assign to comment author if not assigned
+            const { data: issue } = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(issueNumber)
+            });
+            
+            if (!issue.assignees || issue.assignees.length === 0) {
+              await github.rest.issues.addAssignees({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: parseInt(issueNumber),
+                assignees: [context.payload.comment.user.login]
+              });
+            }
+            
+            // Comment on issue
+            let message = `### 🚀 Development Started\n\n`;
+            
+            if (branchExists) {
+              message += `⚠️ **Branch already exists**: \`${branchName}\`\n\n`;
+              message += `You can switch to it with:\n`;
+            } else {
+              message += `✅ **Branch created**: \`${branchName}\`\n`;
+              message += `📌 **Base branch**: \`${fromBranch}\`\n\n`;
+              message += `### Next steps:\n`;
+            }
+            
+            message += `\`\`\`bash\n`;
+            message += `git fetch origin\n`;
+            message += `git checkout ${branchName}\n`;
+            message += `\`\`\`\n\n`;
+            
+            if (!branchExists) {
+              message += `### When ready to submit:\n`;
+              message += `1. Commit your changes\n`;
+              message += `2. Push to the branch\n`;
+              message += `3. Create a Pull Request to \`${fromBranch}\`\n`;
+              message += `4. Link this issue in the PR description using \`Closes #${issueNumber}\`\n`;
+            }
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(issueNumber),
+              body: message
+            });
+            
+      - name: Post summary
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = '${{ steps.parse.outputs.issue_number }}';
+            const success = '${{ job.status }}' === 'success';
+            
+            let response;
+            if (success) {
+              const branchName = '${{ steps.issue.outputs.branch_name }}';
+              const fromBranch = '${{ steps.parse.outputs.from_branch }}';
+              const branchExists = '${{ steps.branch.outputs.branch_exists }}' === 'true';
+              
+              if (branchExists) {
+                response = `⚠️ Branch \`${branchName}\` already exists. See Issue #${issueNumber} for details.`;
+              } else {
+                response = `✅ Successfully started work on Issue #${issueNumber}\n` +
+                          `🌿 Branch: \`${branchName}\` (from \`${fromBranch}\`)`;
+              }
+            } else {
+              response = `❌ Failed to start work on Issue #${issueNumber}. Check the [workflow logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for details.`;
+            }
+            
+            // Reply to the original comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: response
+            });

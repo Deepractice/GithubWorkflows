@@ -1,0 +1,75 @@
+# 解决方案配置文件格式规范
+# 所有 solution.yml 都应该遵循这个格式
+
+# 基本信息（必需）
+name: string                     # 解决方案名称
+version: string                  # 版本号
+description: string              # 简短描述
+
+# 组件配置（必需）
+components:
+  # 分支策略（必需）
+  branch_strategy: string        # 可选: dual-flow, github-flow, git-flow
+  
+  # 启用的命令（必需）
+  commands:
+    - string                     # 可选: start, test, changeset, release, publish
+  
+  # Issue 标签（可选）
+  labels:
+    types:                       # Issue 类型标签
+      - string
+    priorities:                  # 优先级标签
+      - string
+    custom:                      # 自定义标签
+      - string
+
+# 工作流配置（可选）
+workflows:
+  # CI 触发条件
+  ci:
+    on:
+      - push                     # 推送时
+      - pull_request            # PR 时
+    branches:
+      - main
+      - develop
+  
+  # CD 触发条件  
+  cd:
+    on:
+      - release                  # 发布时
+    branches:
+      - main
+
+# 环境变量和密钥（可选）
+environment:
+  secrets:                       # 需要的密钥
+    - name: string
+      description: string
+  
+  variables:                     # 环境变量
+    - name: string
+      value: string
+
+# 项目配置（可选）
+project:
+  # 包管理器
+  package_manager: string        # npm, yarn, pnpm, pip, go
+  
+  # 测试框架
+  test_framework: string         # jest, pytest, go test
+  
+  # 构建工具
+  build_tool: string            # webpack, vite, tsc
+
+# 输出配置（可选）
+output:
+  # 生成的文件位置
+  path: string                   # 默认 .github
+  
+  # 是否合并工作流
+  merge_workflows: boolean       # 默认 true
+  
+  # 是否覆盖已存在文件
+  overwrite: boolean            # 默认 false

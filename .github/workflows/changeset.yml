@@ -1,0 +1,225 @@
+name: Changeset Command
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  handle-changeset:
+    if: |
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/changeset')
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    
+    steps:
+      - name: Get PR Details
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            
+            core.setOutput('branch', pr.data.head.ref);
+            core.setOutput('title', pr.data.title);
+            core.setOutput('author', pr.data.user.login);
+            core.setOutput('number', context.issue.number);
+            
+            // Add eyes reaction to show command received
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'eyes'
+            });
+      
+      - name: Checkout PR Branch
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ steps.pr.outputs.branch }}
+          fetch-depth: 0
+      
+      - name: Parse Command
+        id: parse
+        shell: bash
+        run: |
+          COMMAND="${{ github.event.comment.body }}"
+          echo "Raw command: $COMMAND"
+          
+          # Parse: /changeset [patch|minor|major] [optional message]
+          if [[ "$COMMAND" =~ ^/changeset[[:space:]]+(patch|minor|major)([[:space:]]+(.*))?$ ]]; then
+            TYPE="${BASH_REMATCH[1]}"
+            MESSAGE="${BASH_REMATCH[3]}"
+            
+            echo "type=$TYPE" >> $GITHUB_OUTPUT
+            echo "message=$MESSAGE" >> $GITHUB_OUTPUT
+            echo "valid=true" >> $GITHUB_OUTPUT
+            
+            echo "Parsed: type=$TYPE, message=$MESSAGE"
+          else
+            echo "valid=false" >> $GITHUB_OUTPUT
+            echo "Invalid command format"
+          fi
+      
+      - name: Check Existing Changeset
+        if: steps.parse.outputs.valid == 'true'
+        id: check
+        shell: bash
+        run: |
+          PR_NUMBER="${{ steps.pr.outputs.number }}"
+          
+          # Check for existing changeset files in various formats
+          FOUND=false
+          
+          # Node.js changeset
+          if ls .changeset/*-pr-${PR_NUMBER}-*.md 2>/dev/null | grep -q .; then
+            echo "Existing Node.js changeset found for PR #${PR_NUMBER}"
+            FOUND=true
+          fi
+          
+          # Python/Go/Generic changes
+          if ls .changes/*${PR_NUMBER}* 2>/dev/null | grep -q .; then
+            echo "Existing changeset found for PR #${PR_NUMBER}"
+            FOUND=true
+          fi
+          
+          if [ "$FOUND" = "true" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "No existing changeset for PR #${PR_NUMBER}"
+          fi
+      
+      - name: Detect Project Type
+        if: steps.parse.outputs.valid == 'true'
+        id: detect
+        shell: bash
+        run: |
+          # Run detection script
+          chmod +x ./commands/changeset/scripts/detect.sh
+          PROJECT_TYPE=$(./commands/changeset/scripts/detect.sh)
+          echo "project_type=$PROJECT_TYPE" >> $GITHUB_OUTPUT
+          echo "Detected project type: $PROJECT_TYPE"
+      
+      - name: Create Changeset File
+        if: |
+          steps.parse.outputs.valid == 'true' &&
+          steps.check.outputs.exists != 'true'
+        shell: bash
+        run: |
+          TYPE="${{ steps.parse.outputs.type }}"
+          MESSAGE="${{ steps.parse.outputs.message }}"
+          PR_TITLE="${{ steps.pr.outputs.title }}"
+          PR_NUMBER="${{ steps.pr.outputs.number }}"
+          PR_AUTHOR="${{ steps.pr.outputs.author }}"
+          PROJECT_TYPE="${{ steps.detect.outputs.project_type }}"
+          
+          # Use custom message or PR title
+          CHANGESET_MESSAGE="${MESSAGE:-$PR_TITLE}"
+          
+          # Export variables for implementation scripts
+          export CHANGESET_TYPE="$TYPE"
+          export CHANGESET_MESSAGE="$CHANGESET_MESSAGE"
+          export PR_NUMBER="$PR_NUMBER"
+          export PR_AUTHOR="$PR_AUTHOR"
+          
+          # Call appropriate implementation based on project type
+          IMPL_SCRIPT="./commands/changeset/scripts/${PROJECT_TYPE}.sh"
+          if [ -f "$IMPL_SCRIPT" ]; then
+            echo "Using implementation: $IMPL_SCRIPT"
+            chmod +x "$IMPL_SCRIPT"
+            $IMPL_SCRIPT
+          else
+            echo "No specific implementation for $PROJECT_TYPE, using generic"
+            chmod +x ./commands/changeset/scripts/generic.sh
+            ./commands/changeset/scripts/generic.sh
+          fi
+          
+          echo "changeset_created=true" >> $GITHUB_OUTPUT
+      
+      - name: Commit and Push
+        if: |
+          steps.parse.outputs.valid == 'true' &&
+          steps.check.outputs.exists != 'true'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Add both .changeset and .changes directories (one will exist based on project type)
+          git add .changeset/ 2>/dev/null || true
+          git add .changes/ 2>/dev/null || true
+          git commit -m "📦 Add ${{ steps.parse.outputs.type }} changeset for PR #${{ steps.pr.outputs.number }}"
+          git push origin ${{ steps.pr.outputs.branch }}
+      
+      - name: Post Success Comment
+        if: |
+          steps.parse.outputs.valid == 'true' &&
+          steps.check.outputs.exists != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const type = '${{ steps.parse.outputs.type }}';
+            const emoji = {
+              'patch': '🩹',
+              'minor': '✨',
+              'major': '💥'
+            }[type];
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `${emoji} **Created ${type} changeset**\n\nThis PR will trigger a ${type} version bump when merged.`
+            });
+            
+            // Add rocket reaction for success
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            });
+      
+      - name: Post Error Comment
+        if: steps.parse.outputs.valid == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `❌ **Invalid command format**\n\nUsage: \`/changeset [patch|minor|major] [optional message]\`\n\nExamples:\n- \`/changeset patch\`\n- \`/changeset minor Add dark mode support\`\n- \`/changeset major Breaking API changes\``
+            });
+            
+            // Add confused reaction for error
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'confused'
+            });
+      
+      - name: Handle Existing Changeset
+        if: |
+          steps.parse.outputs.valid == 'true' &&
+          steps.check.outputs.exists == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `⚠️ **Changeset already exists**\n\nA changeset for PR #${{ steps.pr.outputs.number }} already exists. If you need to modify it, please edit the file directly.`
+            });
