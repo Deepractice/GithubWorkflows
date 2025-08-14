@@ -141,30 +141,33 @@ jobs:
             echo "Auto-detecting target branch based on source: $SOURCE"
             
             # Get all branches
-            BRANCHES=$(git branch -r | sed 's/origin\///' | grep -v HEAD)
+            BRANCHES=$(git branch -r | sed 's/origin\///' | sed 's/^[[:space:]]*//' | grep -v HEAD)
             
             # Determine target based on source branch type
             if [[ "$SOURCE" == feature/* ]]; then
               # Features go to develop/dev/main
               for CANDIDATE in develop dev main master; do
-                if echo "$BRANCHES" | grep -q "^$CANDIDATE$"; then
+                if echo "$BRANCHES" | grep -qx "$CANDIDATE"; then
                   TARGET="$CANDIDATE"
+                  echo "Selected target branch: $TARGET"
                   break
                 fi
               done
             elif [[ "$SOURCE" == fix/* ]] || [[ "$SOURCE" == hotfix/* ]]; then
               # Fixes go to main/master
               for CANDIDATE in main master; do
-                if echo "$BRANCHES" | grep -q "^$CANDIDATE$"; then
+                if echo "$BRANCHES" | grep -qx "$CANDIDATE"; then
                   TARGET="$CANDIDATE"
+                  echo "Selected target branch: $TARGET"
                   break
                 fi
               done
             elif [[ "$SOURCE" == docs/* ]] || [[ "$SOURCE" == chore/* ]]; then
               # Docs and chores go to main/master
               for CANDIDATE in main master; do
-                if echo "$BRANCHES" | grep -q "^$CANDIDATE$"; then
+                if echo "$BRANCHES" | grep -qx "$CANDIDATE"; then
                   TARGET="$CANDIDATE"
+                  echo "Selected target branch: $TARGET"
                   break
                 fi
               done
@@ -211,26 +214,26 @@ jobs:
             let prBody = customContent;
             if (!prBody) {
               // Auto-generate content
-              prBody = `## 📋 概述\n${issueTitle}\n\n`;
-              prBody += `## 🔗 关联 Issue\nCloses #${issueNumber}\n\n`;
+              prBody = `## 📋 Summary\n${issueTitle}\n\n`;
+              prBody += `## 🔗 Related Issue\nCloses #${issueNumber}\n\n`;
               
               if (issueBody) {
                 // Add issue description summary
                 const summary = issueBody.split('\n').slice(0, 5).join('\n');
-                prBody += `## 📝 描述\n${summary}\n\n`;
+                prBody += `## 📝 Description\n${summary}\n\n`;
               }
               
               // Get commit messages between branches
-              prBody += `## ✅ 提交记录\n`;
-              prBody += `查看 [提交历史](https://github.com/${context.repo.owner}/${context.repo.repo}/compare/${target}...${source})\n\n`;
+              prBody += `## ✅ Commits\n`;
+              prBody += `View [commit history](https://github.com/${context.repo.owner}/${context.repo.repo}/compare/${target}...${source})\n\n`;
               
-              prBody += `## 🧪 测试清单\n`;
-              prBody += `- [ ] 代码已自测\n`;
-              prBody += `- [ ] 相关测试已通过\n`;
-              prBody += `- [ ] 文档已更新（如需要）\n\n`;
+              prBody += `## 🧪 Checklist\n`;
+              prBody += `- [ ] Code has been self-reviewed\n`;
+              prBody += `- [ ] Tests pass\n`;
+              prBody += `- [ ] Documentation updated (if needed)\n\n`;
               
               prBody += `---\n`;
-              prBody += `*此 PR 由 /pr 命令自动创建*`;
+              prBody += `*This PR was created by the /pr command*`;
             }
             
             core.setOutput('title', prTitle);
@@ -369,46 +372,46 @@ jobs:
             
             if (success && prNumber) {
               if (prExists) {
-                message = `### ⚠️ Pull Request 已存在\n\n`;
+                message = `### ⚠️ Pull Request Already Exists\n\n`;
                 message += `**PR**: #${prNumber}\n`;
-                message += `**链接**: ${prUrl}\n`;
-                message += `**分支**: \`${source}\` → \`${target}\`\n`;
+                message += `**URL**: ${prUrl}\n`;
+                message += `**Branches**: \`${source}\` → \`${target}\`\n`;
               } else {
                 const icon = draft ? '📝' : '✅';
-                const status = draft ? '草稿 PR' : 'Pull Request';
-                message = `### ${icon} ${status} 创建成功！\n\n`;
+                const status = draft ? 'Draft PR' : 'Pull Request';
+                message = `### ${icon} ${status} Created Successfully!\n\n`;
                 message += `**PR**: #${prNumber}\n`;
-                message += `**链接**: ${prUrl}\n`;
-                message += `**源分支**: \`${source}\`\n`;
-                message += `**目标分支**: \`${target}\`\n`;
+                message += `**URL**: ${prUrl}\n`;
+                message += `**Source**: \`${source}\`\n`;
+                message += `**Target**: \`${target}\`\n`;
                 
                 if (draft) {
-                  message += `\n⚠️ 这是一个草稿 PR，完成开发后请点击 "Ready for review" 按钮。`;
+                  message += `\n⚠️ This is a draft PR. Click "Ready for review" when ready.`;
                 } else {
-                  message += `\n✅ PR 已准备好接受审查。`;
+                  message += `\n✅ PR is ready for review.`;
                 }
                 
-                message += `\n\n### 后续步骤\n`;
-                message += `1. 等待 CI 检查通过\n`;
-                message += `2. 请求代码审查\n`;
-                message += `3. 合并到 \`${target}\` 分支\n`;
+                message += `\n\n### Next Steps\n`;
+                message += `1. Wait for CI checks to pass\n`;
+                message += `2. Request code review\n`;
+                message += `3. Merge to \`${target}\` branch\n`;
               }
             } else {
-              message = `### ❌ 创建 Pull Request 失败\n\n`;
+              message = `### ❌ Failed to Create Pull Request\n\n`;
               
               // Add error details based on what failed
               const commitCount = '${{ steps.commits.outputs.commit_count }}';
               if (commitCount === '0') {
-                message += `**原因**: \`${source}\` 和 \`${target}\` 之间没有新的提交\n\n`;
-                message += `请确保：\n`;
-                message += `1. 源分支有新的提交\n`;
-                message += `2. 源分支已推送到远程仓库\n`;
+                message += `**Reason**: No new commits between \`${source}\` and \`${target}\`\n\n`;
+                message += `Please ensure:\n`;
+                message += `1. Source branch has new commits\n`;
+                message += `2. Source branch is pushed to remote\n`;
               } else if (!source) {
-                message += `**原因**: 无法检测源分支\n\n`;
-                message += `请使用 \`--source\` 参数指定源分支：\n`;
+                message += `**Reason**: Could not detect source branch\n\n`;
+                message += `Please specify source branch using \`--source\` parameter:\n`;
                 message += `\`\`\`\n/pr --source feature/#${context.issue.number}-xxx\n\`\`\``;
               } else {
-                message += `请查看 [工作流日志](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) 了解详情。`;
+                message += `Please check the [workflow logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for details.`;
               }
             }
             
