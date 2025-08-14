@@ -28,19 +28,20 @@ PROJECT_TYPE=$(detect_project_type)
 echo "Detected project type: $PROJECT_TYPE"
 
 # Call appropriate implementation
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 case "$PROJECT_TYPE" in
     "node")
-        bash implementations/node.sh "$@"
+        bash "$SCRIPT_DIR/node.sh" "$@"
         ;;
     "python")
-        bash implementations/python.sh "$@"
+        bash "$SCRIPT_DIR/python.sh" "$@"
         ;;
     "go")
-        bash implementations/go.sh "$@"
+        bash "$SCRIPT_DIR/go.sh" "$@"
         ;;
     *)
         echo "Unsupported project type: $PROJECT_TYPE"
         echo "Using generic implementation..."
-        bash implementations/generic.sh "$@"
+        bash "$SCRIPT_DIR/generic.sh" "$@"
         ;;
 esac
