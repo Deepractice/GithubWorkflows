@@ -1,0 +1,23 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 202,
+    "title": "Run integration tests",
+    "state": "open",
+    "labels": [],
+    "pull_request": null
+  },
+  "comment": {
+    "id": 3,
+    "body": "/test integration",
+    "user": {
+      "login": "developer"
+    }
+  },
+  "repository": {
+    "name": "test-repo",
+    "owner": {
+      "login": "test-org"
+    }
+  }
+}

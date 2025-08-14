@@ -1,0 +1,23 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 204,
+    "title": "Generate test coverage",
+    "state": "open",
+    "labels": [],
+    "pull_request": null
+  },
+  "comment": {
+    "id": 5,
+    "body": "/test coverage",
+    "user": {
+      "login": "developer"
+    }
+  },
+  "repository": {
+    "name": "test-repo",
+    "owner": {
+      "login": "test-org"
+    }
+  }
+}
