@@ -221,18 +221,6 @@ jobs:
             const fromBranch = '${{ steps.base_branch.outputs.from_branch }}';
             const branchExists = '${{ steps.branch.outputs.branch_exists }}' === 'true';
             
-            // Add in-progress label if not exists
-            try {
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: parseInt(issueNumber),
-                labels: ['in-progress']
-              });
-            } catch (e) {
-              console.log('Note: in-progress label may not exist');
-            }
-            
             // Assign to comment author if not assigned
             const { data: issue } = await github.rest.issues.get({
               owner: context.repo.owner,
