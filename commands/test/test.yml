@@ -5,8 +5,6 @@ on:
     types: [created]
   pull_request:
     types: [opened, synchronize, reopened]
-  pull_request_comment:
-    types: [created]
 
 jobs:
   run-tests:
@@ -36,7 +34,7 @@ jobs:
             let options = '';
             
             // 如果是通过评论触发的，解析命令
-            if (context.eventName === 'issue_comment' || context.eventName === 'pull_request_comment') {
+            if (context.eventName === 'issue_comment') {
               const comment = context.payload.comment.body.trim();
               const match = comment.match(/^\/test(?:\s+(unit|integration|e2e|all|coverage))?(?:\s+(.*))?$/);
               
