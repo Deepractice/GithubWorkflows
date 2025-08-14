@@ -11,31 +11,35 @@
 ### 基本语法
 
 ```bash
-/start issue <issue_number> [--from-branch <branch_name>]
+/start issue [issue_number] [--from-branch <branch_name>]
 ```
 
 ### 参数说明
 
-- `issue_number`: Issue 编号（必需）
-- `--from-branch`: 指定基础分支（可选，默认为 `main`）
+- `issue_number`: Issue 编号（可选，默认使用当前 Issue）
+- `--from-branch`: 指定基础分支（可选，自动检测优先级：develop > dev > main > master > 默认分支）
 
 ## 使用示例
 
-### 1. 从默认分支开始
+### 1. 在当前 Issue 中创建分支
 
 ```bash
+# 使用自动检测的基础分支
+/start issue
+
+# 指定基础分支
+/start issue --from-branch staging
+```
+
+### 2. 为指定 Issue 创建分支
+
+```bash
+# 从自动检测的基础分支创建
 /start issue 123
+
+# 从指定分支创建
+/start issue 123 --from-branch develop
 ```
-
-创建分支 `feature/#123-issue`，基于 `main` 分支。
-
-### 2. 指定基础分支
-
-```bash
-/start issue 124 --from-branch develop
-```
-
-创建分支 `fix/#124-issue`，基于 `develop` 分支。
 
 ### 3. 基于其他 feature 分支
 
@@ -68,24 +72,32 @@
 ## 工作流程
 
 1. **解析命令**
-   - 提取 Issue 编号
-   - 确定基础分支
+   - 提取 Issue 编号（如未指定则使用当前 Issue）
+   - 确定基础分支（自动检测或使用指定）
 
-2. **获取 Issue 信息**
+2. **确定基础分支**
+   - 如果指定了 `--from-branch`，使用指定分支
+   - 否则自动检测，优先级：
+     - `develop` 分支（如果存在）
+     - `dev` 分支（如果存在）
+     - `main` 分支（如果存在）
+     - `master` 分支（如果存在）
+     - 仓库默认分支
+
+3. **获取 Issue 信息**
    - 读取标题、标签
    - 判断类型和优先级
 
-3. **生成分支名**
+4. **生成分支名**
    - 根据类型选择前缀
    - 处理中文标题
 
-4. **创建分支**
-   - 从指定基础分支创建
+5. **创建分支**
+   - 从确定的基础分支创建
    - 推送到远程仓库
 
-5. **更新 Issue**
-   - 添加 `in-progress` 标签
-   - 分配给执行者
+6. **更新 Issue**
+   - 分配给执行者（如果未分配）
    - 添加进度说明
 
 ## 返回信息
@@ -130,10 +142,11 @@ git checkout feature/#123-issue
 
 ## 注意事项
 
-1. **Issue 必须存在** - 命令会验证 Issue 是否存在
+1. **Issue 必须存在** - 使用指定 Issue 编号时，命令会验证 Issue 是否存在
 2. **基础分支必须存在** - 指定的 from-branch 必须已存在
 3. **分支名唯一** - 如果分支已存在，不会重复创建
 4. **自动分配** - 如果 Issue 未分配，会自动分配给命令执行者
+5. **不再添加 in-progress 标签** - 为减少标签噪音，不再自动添加此标签
 
 ## 最佳实践
 

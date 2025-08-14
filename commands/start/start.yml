@@ -27,57 +27,43 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const comment = context.payload.comment.body.trim();
+            const comment = context.payload.comment.body;
+            // Support both with and without issue number
+            const match = comment.match(/\/start issue(?:\s+(\d+))?(?:\s+--from-branch\s+(\S+))?/);
             
-            // Match two patterns:
-            // 1. /start issue [number] [--from-branch branch]
-            // 2. /start issue [--from-branch branch]
-            const explicitMatch = comment.match(/\/start issue\s+(\d+)(?:\s+--from-branch\s+(\S+))?/);
-            const implicitMatch = comment.match(/\/start issue(?:\s+--from-branch\s+(\S+))?$/);
-            
-            let issueNumber;
-            let explicitBranch = null;
-            
-            if (explicitMatch) {
-              // Explicit issue number provided
-              issueNumber = explicitMatch[1];
-              explicitBranch = explicitMatch[2] || null;
-            } else if (implicitMatch) {
-              // No issue number provided, use current issue
-              issueNumber = context.issue.number;
-              explicitBranch = implicitMatch[1] || null;
-            } else {
-              core.setFailed('Invalid command format. Use: /start issue [number] [--from-branch branch]');
+            if (!match) {
+              core.setFailed('Invalid command format');
               return;
             }
             
-            // If no explicit branch specified, we'll determine it later
+            // If no issue number provided, use current issue
+            const issueNumber = match[1] || context.issue.number;
+            const fromBranch = match[2] || '';
+            
             core.setOutput('issue_number', issueNumber);
-            core.setOutput('explicit_branch', explicitBranch || '');
+            core.setOutput('from_branch', fromBranch);
             
             console.log(`📋 Issue: #${issueNumber}`);
-            if (explicitBranch) {
-              console.log(`📌 Explicit base branch: ${explicitBranch}`);
-            } else {
-              console.log(`📌 Will auto-detect base branch (prefer develop/dev, fallback to main)`);
-            }
+            console.log(`📌 Base branch: ${fromBranch || 'auto-detect'}`);
             
-      - name: Determine base branch
-        id: base_branch
+      - name: Get issue details
+        id: issue
         uses: actions/github-script@v7
         with:
           script: |
-            const explicitBranch = '${{ steps.parse.outputs.explicit_branch }}';
+            const issueNumber = ${{ steps.parse.outputs.issue_number }};
+            const fromBranchParam = '${{ steps.parse.outputs.from_branch }}';
             
-            if (explicitBranch) {
-              // User specified a branch, use it
-              core.setOutput('from_branch', explicitBranch);
-              console.log(`Using explicit branch: ${explicitBranch}`);
-              return;
-            }
+            // Get issue details
+            const { data: issue } = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(issueNumber)
+            });
             
-            // Auto-detect branch
-            try {
+            // Auto-detect base branch if not specified
+            let fromBranch = fromBranchParam;
+            if (!fromBranch) {
               // Get all branches
               const { data: branches } = await github.rest.repos.listBranches({
                 owner: context.repo.owner,
@@ -86,51 +72,29 @@ jobs:
               });
               
               const branchNames = branches.map(b => b.name);
-              console.log(`Available branches: ${branchNames.join(', ')}`);
               
-              // Check for develop/dev branch
-              let fromBranch = 'main';
+              // Priority order: develop > dev > main > master > default
               if (branchNames.includes('develop')) {
                 fromBranch = 'develop';
-                console.log('Found develop branch, using it as base');
               } else if (branchNames.includes('dev')) {
                 fromBranch = 'dev';
-                console.log('Found dev branch, using it as base');
               } else if (branchNames.includes('main')) {
                 fromBranch = 'main';
-                console.log('Using main branch as base');
               } else if (branchNames.includes('master')) {
                 fromBranch = 'master';
-                console.log('Using master branch as base');
               } else {
-                // Use the default branch
+                // Get default branch
                 const { data: repo } = await github.rest.repos.get({
                   owner: context.repo.owner,
                   repo: context.repo.repo
                 });
                 fromBranch = repo.default_branch;
-                console.log(`Using default branch: ${fromBranch}`);
               }
               
-              core.setOutput('from_branch', fromBranch);
-            } catch (error) {
-              console.error('Error detecting branch, using main as fallback:', error);
-              core.setOutput('from_branch', 'main');
+              console.log(`🔍 Auto-detected base branch: ${fromBranch}`);
             }
             
-      - name: Get issue details
-        id: issue
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const issueNumber = ${{ steps.parse.outputs.issue_number }};
-            
-            // Get issue details
-            const { data: issue } = await github.rest.issues.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: parseInt(issueNumber)
-            });
+            core.setOutput('from_branch', fromBranch);
             
             // Extract type from labels
             const typeLabel = issue.labels.find(l => l.name.startsWith('type:'));
@@ -179,7 +143,7 @@ jobs:
       - name: Create and push branch
         id: branch
         run: |
-          FROM_BRANCH="${{ steps.base_branch.outputs.from_branch }}"
+          FROM_BRANCH="${{ steps.issue.outputs.from_branch }}"
           NEW_BRANCH="${{ steps.issue.outputs.branch_name }}"
           
           # Configure git
@@ -218,7 +182,7 @@ jobs:
           script: |
             const issueNumber = ${{ steps.parse.outputs.issue_number }};
             const branchName = '${{ steps.issue.outputs.branch_name }}';
-            const fromBranch = '${{ steps.base_branch.outputs.from_branch }}';
+            const fromBranch = '${{ steps.issue.outputs.from_branch }}';
             const branchExists = '${{ steps.branch.outputs.branch_exists }}' === 'true';
             
             // Assign to comment author if not assigned
@@ -237,7 +201,10 @@ jobs:
               });
             }
             
-            // Comment on issue
+            // Check if we're commenting on the same issue or a different one
+            const isCurrentIssue = parseInt(issueNumber) === context.issue.number;
+            
+            // Comment on target issue
             let message = `### 🚀 Development Started\n\n`;
             
             if (branchExists) {
@@ -269,8 +236,11 @@ jobs:
               body: message
             });
             
+            // Store whether we should skip the summary
+            core.setOutput('skip_summary', isCurrentIssue ? 'true' : 'false');
+            
       - name: Post summary
-        if: always()
+        if: always() && steps.issue.outputs.skip_summary != 'true'
         uses: actions/github-script@v7
         with:
           script: |
@@ -280,7 +250,7 @@ jobs:
             let response;
             if (success) {
               const branchName = '${{ steps.issue.outputs.branch_name }}';
-              const fromBranch = '${{ steps.base_branch.outputs.from_branch }}';
+              const fromBranch = '${{ steps.issue.outputs.from_branch }}';
               const branchExists = '${{ steps.branch.outputs.branch_exists }}' === 'true';
               
               if (branchExists) {

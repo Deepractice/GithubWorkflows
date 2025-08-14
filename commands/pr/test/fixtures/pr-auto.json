@@ -1,0 +1,37 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 7,
+    "title": "Add OAuth authentication",
+    "body": "We need to implement OAuth 2.0 authentication for better security.\n\n## Requirements\n- Support Google OAuth\n- Support GitHub OAuth\n- Secure token storage",
+    "state": "open",
+    "labels": [
+      {
+        "name": "type: feature",
+        "color": "0e8a16",
+        "description": "New feature"
+      },
+      {
+        "name": "priority: high",
+        "color": "d93f0b",
+        "description": "High priority"
+      }
+    ],
+    "assignees": [],
+    "pull_request": null
+  },
+  "comment": {
+    "id": 1,
+    "body": "/pr",
+    "user": {
+      "login": "developer"
+    }
+  },
+  "repository": {
+    "name": "test-repo",
+    "owner": {
+      "login": "test-org"
+    },
+    "default_branch": "main"
+  }
+}

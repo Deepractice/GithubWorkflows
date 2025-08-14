@@ -11,6 +11,7 @@ components:
   # 启用的命令
   commands:
     - start      # /start issue - 开始开发
+    - pr         # /pr - 创建 Pull Request
     - test       # /test - 运行测试
     - changeset  # /changeset - 声明变更
     - release    # /release - 创建版本
