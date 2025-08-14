@@ -28,21 +28,23 @@ jobs:
         with:
           script: |
             const comment = context.payload.comment.body;
-            const match = comment.match(/\/start issue (\d+)(?:\s+--from-branch\s+(\S+))?/);
+            // Support both with and without issue number
+            const match = comment.match(/\/start issue(?:\s+(\d+))?(?:\s+--from-branch\s+(\S+))?/);
             
             if (!match) {
               core.setFailed('Invalid command format');
               return;
             }
             
-            const issueNumber = match[1];
-            const fromBranch = match[2] || 'main';
+            // If no issue number provided, use current issue
+            const issueNumber = match[1] || context.issue.number;
+            const fromBranch = match[2] || '';
             
             core.setOutput('issue_number', issueNumber);
             core.setOutput('from_branch', fromBranch);
             
             console.log(`📋 Issue: #${issueNumber}`);
-            console.log(`📌 Base branch: ${fromBranch}`);
+            console.log(`📌 Base branch: ${fromBranch || 'auto-detect'}`);
             
       - name: Get issue details
         id: issue
@@ -50,6 +52,7 @@ jobs:
         with:
           script: |
             const issueNumber = ${{ steps.parse.outputs.issue_number }};
+            const fromBranchParam = '${{ steps.parse.outputs.from_branch }}';
             
             // Get issue details
             const { data: issue } = await github.rest.issues.get({
@@ -57,6 +60,41 @@ jobs:
               repo: context.repo.repo,
               issue_number: parseInt(issueNumber)
             });
+            
+            // Auto-detect base branch if not specified
+            let fromBranch = fromBranchParam;
+            if (!fromBranch) {
+              // Get all branches
+              const { data: branches } = await github.rest.repos.listBranches({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100
+              });
+              
+              const branchNames = branches.map(b => b.name);
+              
+              // Priority order: develop > dev > main > master > default
+              if (branchNames.includes('develop')) {
+                fromBranch = 'develop';
+              } else if (branchNames.includes('dev')) {
+                fromBranch = 'dev';
+              } else if (branchNames.includes('main')) {
+                fromBranch = 'main';
+              } else if (branchNames.includes('master')) {
+                fromBranch = 'master';
+              } else {
+                // Get default branch
+                const { data: repo } = await github.rest.repos.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo
+                });
+                fromBranch = repo.default_branch;
+              }
+              
+              console.log(`🔍 Auto-detected base branch: ${fromBranch}`);
+            }
+            
+            core.setOutput('from_branch', fromBranch);
             
             // Extract type from labels
             const typeLabel = issue.labels.find(l => l.name.startsWith('type:'));
@@ -105,7 +143,7 @@ jobs:
       - name: Create and push branch
         id: branch
         run: |
-          FROM_BRANCH="${{ steps.parse.outputs.from_branch }}"
+          FROM_BRANCH="${{ steps.issue.outputs.from_branch }}"
           NEW_BRANCH="${{ steps.issue.outputs.branch_name }}"
           
           # Configure git
@@ -144,20 +182,8 @@ jobs:
           script: |
             const issueNumber = ${{ steps.parse.outputs.issue_number }};
             const branchName = '${{ steps.issue.outputs.branch_name }}';
-            const fromBranch = '${{ steps.parse.outputs.from_branch }}';
+            const fromBranch = '${{ steps.issue.outputs.from_branch }}';
             const branchExists = '${{ steps.branch.outputs.branch_exists }}' === 'true';
-            
-            // Add in-progress label if not exists
-            try {
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: parseInt(issueNumber),
-                labels: ['in-progress']
-              });
-            } catch (e) {
-              console.log('Note: in-progress label may not exist');
-            }
             
             // Assign to comment author if not assigned
             const { data: issue } = await github.rest.issues.get({
@@ -175,7 +201,10 @@ jobs:
               });
             }
             
-            // Comment on issue
+            // Check if we're commenting on the same issue or a different one
+            const isCurrentIssue = parseInt(issueNumber) === context.issue.number;
+            
+            // Comment on target issue
             let message = `### 🚀 Development Started\n\n`;
             
             if (branchExists) {
@@ -207,8 +236,11 @@ jobs:
               body: message
             });
             
+            // Store whether we should skip the summary
+            core.setOutput('skip_summary', isCurrentIssue ? 'true' : 'false');
+            
       - name: Post summary
-        if: always()
+        if: always() && steps.issue.outputs.skip_summary != 'true'
         uses: actions/github-script@v7
         with:
           script: |
@@ -218,7 +250,7 @@ jobs:
             let response;
             if (success) {
               const branchName = '${{ steps.issue.outputs.branch_name }}';
-              const fromBranch = '${{ steps.parse.outputs.from_branch }}';
+              const fromBranch = '${{ steps.issue.outputs.from_branch }}';
               const branchExists = '${{ steps.branch.outputs.branch_exists }}' === 'true';
               
               if (branchExists) {
