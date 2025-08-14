@@ -1,0 +1,33 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 7,
+    "title": "添加用户认证功能",
+    "body": "实现OAuth 2.0认证，支持多个提供商",
+    "state": "open",
+    "labels": [
+      {
+        "name": "type: feature",
+        "color": "0e8a16",
+        "description": "New feature"
+      }
+    ],
+    "assignees": [],
+    "pull_request": null
+  },
+  "comment": {
+    "id": 10,
+    "body": "/pr",
+    "user": {
+      "login": "developer"
+    }
+  },
+  "repository": {
+    "name": "test-repo",
+    "owner": {
+      "login": "test-org"
+    },
+    "default_branch": "main"
+  },
+  "_test_note": "Test PR creation with Chinese issue title"
+}

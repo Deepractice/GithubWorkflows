@@ -1,0 +1,33 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 100,
+    "title": "Issue without matching branch",
+    "body": "This issue has no associated branch created yet",
+    "state": "open",
+    "labels": [
+      {
+        "name": "type: feature",
+        "color": "0e8a16",
+        "description": "New feature"
+      }
+    ],
+    "assignees": [],
+    "pull_request": null
+  },
+  "comment": {
+    "id": 9,
+    "body": "/pr",
+    "user": {
+      "login": "developer"
+    }
+  },
+  "repository": {
+    "name": "test-repo",
+    "owner": {
+      "login": "test-org"
+    },
+    "default_branch": "main"
+  },
+  "_test_note": "This should fail because no branch matches issue #100"
+}
