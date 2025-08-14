@@ -1,6 +1,6 @@
 {
   "name": "@deepractice-ai/github-workflows",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "可复用的 GitHub 工作流工具包 - 通过 Issue/PR 评论触发各种自动化操作",
   "keywords": [
     "github",
