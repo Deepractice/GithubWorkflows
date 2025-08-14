@@ -1,0 +1,17 @@
+{
+  "description": "Mock response for repository with dev branch",
+  "branches": [
+    {
+      "name": "main",
+      "protected": true
+    },
+    {
+      "name": "dev",
+      "protected": false
+    },
+    {
+      "name": "hotfix/urgent-fix",
+      "protected": false
+    }
+  ]
+}

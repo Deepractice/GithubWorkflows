@@ -1,0 +1,35 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 789,
+    "title": "Add dark mode support",
+    "state": "open",
+    "labels": [
+      {
+        "name": "type: feature",
+        "color": "0e8a16",
+        "description": "New feature"
+      },
+      {
+        "name": "priority: medium",
+        "color": "fbca04",
+        "description": "Medium priority"
+      }
+    ],
+    "assignees": [],
+    "pull_request": null
+  },
+  "comment": {
+    "id": 3,
+    "body": "/start issue",
+    "user": {
+      "login": "developer"
+    }
+  },
+  "repository": {
+    "name": "test-repo",
+    "owner": {
+      "login": "test-org"
+    }
+  }
+}

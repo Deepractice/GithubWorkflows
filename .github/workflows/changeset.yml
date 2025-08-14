@@ -17,7 +17,47 @@ jobs:
       issues: write
     
     steps:
+      - name: Check permissions
+        id: permissions
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const username = context.payload.comment.user.login;
+            console.log(`Checking permissions for user: ${username}`);
+            
+            try {
+              // Get user's permission level
+              const { data: perm } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                username: username
+              });
+              
+              const hasPermission = ['admin', 'maintain', 'write'].includes(perm.permission);
+              core.setOutput('allowed', hasPermission);
+              
+              if (!hasPermission) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: `❌ **Permission denied**\n\n@${username} does not have permission to create changesets. Only contributors with write access can use the \`/changeset\` command.`
+                });
+                
+                await github.rest.reactions.createForIssueComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: context.payload.comment.id,
+                  content: '-1'
+                });
+              }
+            } catch (error) {
+              core.setOutput('allowed', false);
+              console.error('Permission check failed:', error);
+            }
+      
       - name: Get PR Details
+        if: steps.permissions.outputs.allowed == 'true'
         id: pr
         uses: actions/github-script@v7
         with:
@@ -42,6 +82,7 @@ jobs:
             });
       
       - name: Checkout PR Branch
+        if: steps.permissions.outputs.allowed == 'true'
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -49,11 +90,13 @@ jobs:
           fetch-depth: 0
       
       - name: Configure Git
+        if: steps.permissions.outputs.allowed == 'true'
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
       
       - name: Parse Command
+        if: steps.permissions.outputs.allowed == 'true'
         id: parse
         shell: bash
         run: |
@@ -76,7 +119,7 @@ jobs:
           fi
       
       - name: Check Existing Changeset
-        if: steps.parse.outputs.valid == 'true'
+        if: steps.permissions.outputs.allowed == 'true' && steps.parse.outputs.valid == 'true'
         id: check
         shell: bash
         run: |
@@ -105,7 +148,7 @@ jobs:
           fi
       
       - name: Detect Project Type
-        if: steps.parse.outputs.valid == 'true'
+        if: steps.permissions.outputs.allowed == 'true' && steps.parse.outputs.valid == 'true'
         id: detect
         shell: bash
         run: |
@@ -117,6 +160,7 @@ jobs:
       
       - name: Create Changeset File
         if: |
+          steps.permissions.outputs.allowed == 'true' &&
           steps.parse.outputs.valid == 'true' &&
           steps.check.outputs.exists != 'true'
         shell: bash
@@ -153,6 +197,7 @@ jobs:
       
       - name: Commit and Push
         if: |
+          steps.permissions.outputs.allowed == 'true' &&
           steps.parse.outputs.valid == 'true' &&
           steps.check.outputs.exists != 'true'
         shell: bash
@@ -168,6 +213,7 @@ jobs:
       
       - name: Post Success Comment
         if: |
+          steps.permissions.outputs.allowed == 'true' &&
           steps.parse.outputs.valid == 'true' &&
           steps.check.outputs.exists != 'true'
         uses: actions/github-script@v7
@@ -196,7 +242,7 @@ jobs:
             });
       
       - name: Post Error Comment
-        if: steps.parse.outputs.valid == 'false'
+        if: steps.permissions.outputs.allowed == 'true' && steps.parse.outputs.valid == 'false'
         uses: actions/github-script@v7
         with:
           script: |
@@ -217,6 +263,7 @@ jobs:
       
       - name: Handle Existing Changeset
         if: |
+          steps.permissions.outputs.allowed == 'true' &&
           steps.parse.outputs.valid == 'true' &&
           steps.check.outputs.exists == 'true'
         uses: actions/github-script@v7

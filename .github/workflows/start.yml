@@ -27,22 +27,96 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const comment = context.payload.comment.body;
-            const match = comment.match(/\/start issue (\d+)(?:\s+--from-branch\s+(\S+))?/);
+            const comment = context.payload.comment.body.trim();
             
-            if (!match) {
-              core.setFailed('Invalid command format');
+            // Match two patterns:
+            // 1. /start issue [number] [--from-branch branch]
+            // 2. /start issue [--from-branch branch]
+            const explicitMatch = comment.match(/\/start issue\s+(\d+)(?:\s+--from-branch\s+(\S+))?/);
+            const implicitMatch = comment.match(/\/start issue(?:\s+--from-branch\s+(\S+))?$/);
+            
+            let issueNumber;
+            let explicitBranch = null;
+            
+            if (explicitMatch) {
+              // Explicit issue number provided
+              issueNumber = explicitMatch[1];
+              explicitBranch = explicitMatch[2] || null;
+            } else if (implicitMatch) {
+              // No issue number provided, use current issue
+              issueNumber = context.issue.number;
+              explicitBranch = implicitMatch[1] || null;
+            } else {
+              core.setFailed('Invalid command format. Use: /start issue [number] [--from-branch branch]');
               return;
             }
             
-            const issueNumber = match[1];
-            const fromBranch = match[2] || 'main';
-            
+            // If no explicit branch specified, we'll determine it later
             core.setOutput('issue_number', issueNumber);
-            core.setOutput('from_branch', fromBranch);
+            core.setOutput('explicit_branch', explicitBranch || '');
             
             console.log(`📋 Issue: #${issueNumber}`);
-            console.log(`📌 Base branch: ${fromBranch}`);
+            if (explicitBranch) {
+              console.log(`📌 Explicit base branch: ${explicitBranch}`);
+            } else {
+              console.log(`📌 Will auto-detect base branch (prefer develop/dev, fallback to main)`);
+            }
+            
+      - name: Determine base branch
+        id: base_branch
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const explicitBranch = '${{ steps.parse.outputs.explicit_branch }}';
+            
+            if (explicitBranch) {
+              // User specified a branch, use it
+              core.setOutput('from_branch', explicitBranch);
+              console.log(`Using explicit branch: ${explicitBranch}`);
+              return;
+            }
+            
+            // Auto-detect branch
+            try {
+              // Get all branches
+              const { data: branches } = await github.rest.repos.listBranches({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100
+              });
+              
+              const branchNames = branches.map(b => b.name);
+              console.log(`Available branches: ${branchNames.join(', ')}`);
+              
+              // Check for develop/dev branch
+              let fromBranch = 'main';
+              if (branchNames.includes('develop')) {
+                fromBranch = 'develop';
+                console.log('Found develop branch, using it as base');
+              } else if (branchNames.includes('dev')) {
+                fromBranch = 'dev';
+                console.log('Found dev branch, using it as base');
+              } else if (branchNames.includes('main')) {
+                fromBranch = 'main';
+                console.log('Using main branch as base');
+              } else if (branchNames.includes('master')) {
+                fromBranch = 'master';
+                console.log('Using master branch as base');
+              } else {
+                // Use the default branch
+                const { data: repo } = await github.rest.repos.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo
+                });
+                fromBranch = repo.default_branch;
+                console.log(`Using default branch: ${fromBranch}`);
+              }
+              
+              core.setOutput('from_branch', fromBranch);
+            } catch (error) {
+              console.error('Error detecting branch, using main as fallback:', error);
+              core.setOutput('from_branch', 'main');
+            }
             
       - name: Get issue details
         id: issue
@@ -105,7 +179,7 @@ jobs:
       - name: Create and push branch
         id: branch
         run: |
-          FROM_BRANCH="${{ steps.parse.outputs.from_branch }}"
+          FROM_BRANCH="${{ steps.base_branch.outputs.from_branch }}"
           NEW_BRANCH="${{ steps.issue.outputs.branch_name }}"
           
           # Configure git
@@ -144,7 +218,7 @@ jobs:
           script: |
             const issueNumber = ${{ steps.parse.outputs.issue_number }};
             const branchName = '${{ steps.issue.outputs.branch_name }}';
-            const fromBranch = '${{ steps.parse.outputs.from_branch }}';
+            const fromBranch = '${{ steps.base_branch.outputs.from_branch }}';
             const branchExists = '${{ steps.branch.outputs.branch_exists }}' === 'true';
             
             // Add in-progress label if not exists
@@ -218,7 +292,7 @@ jobs:
             let response;
             if (success) {
               const branchName = '${{ steps.issue.outputs.branch_name }}';
-              const fromBranch = '${{ steps.parse.outputs.from_branch }}';
+              const fromBranch = '${{ steps.base_branch.outputs.from_branch }}';
               const branchExists = '${{ steps.branch.outputs.branch_exists }}' === 'true';
               
               if (branchExists) {

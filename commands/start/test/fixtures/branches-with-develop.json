@@ -1,0 +1,17 @@
+{
+  "description": "Mock response for repository with develop branch",
+  "branches": [
+    {
+      "name": "main",
+      "protected": true
+    },
+    {
+      "name": "develop",
+      "protected": false
+    },
+    {
+      "name": "feature/old-feature",
+      "protected": false
+    }
+  ]
+}
