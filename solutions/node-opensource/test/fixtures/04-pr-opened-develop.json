@@ -1,0 +1,26 @@
+{
+  "action": "opened",
+  "pull_request": {
+    "number": 101,
+    "title": "feat: Test Feature",
+    "state": "open",
+    "draft": false,
+    "head": {
+      "ref": "feature/test-100"
+    },
+    "base": {
+      "ref": "develop"
+    },
+    "user": {
+      "login": "test-user",
+      "type": "User"
+    }
+  },
+  "repository": {
+    "owner": {
+      "login": "test-owner"
+    },
+    "name": "test-repo",
+    "default_branch": "main"
+  }
+}

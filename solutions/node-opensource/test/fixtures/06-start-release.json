@@ -1,0 +1,24 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 101,
+    "pull_request": {
+      "url": "https://api.github.com/repos/test-owner/test-repo/pulls/101"
+    }
+  },
+  "comment": {
+    "id": 3,
+    "body": "/start release",
+    "user": {
+      "login": "github-actions[bot]",
+      "type": "Bot"
+    }
+  },
+  "repository": {
+    "owner": {
+      "login": "test-owner"
+    },
+    "name": "test-repo",
+    "default_branch": "main"
+  }
+}
