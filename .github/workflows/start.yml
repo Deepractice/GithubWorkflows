@@ -289,11 +289,12 @@ jobs:
             BRANCHES=$(git branch -r | sed 's/origin\///' | grep -v HEAD)
             
             # Look for branches matching the issue number
+            # Match exact pattern: type/#number-issue
             PATTERNS=(
-              "feature/#${ISSUE_NUMBER}-"
-              "fix/#${ISSUE_NUMBER}-"
-              "docs/#${ISSUE_NUMBER}-"
-              "chore/#${ISSUE_NUMBER}-"
+              "feature/#${ISSUE_NUMBER}-issue"
+              "fix/#${ISSUE_NUMBER}-issue"
+              "docs/#${ISSUE_NUMBER}-issue"
+              "chore/#${ISSUE_NUMBER}-issue"
             )
             
             for PATTERN in "${PATTERNS[@]}"; do
@@ -447,53 +448,72 @@ jobs:
             const issueNumber = '${{ steps.issue.outputs.number }}';
             const labels = '${{ steps.issue.outputs.labels }}'.split(',').filter(l => l);
             
-            // Check if PR already exists
-            const { data: pulls } = await github.rest.pulls.list({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              head: `${context.repo.owner}:${source}`,
-              base: target,
-              state: 'open'
-            });
-            
-            if (pulls.length > 0) {
-              const existingPR = pulls[0];
-              console.log(`PR already exists: #${existingPR.number}`);
-              core.setOutput('number', existingPR.number);
-              core.setOutput('url', existingPR.html_url);
-              core.setOutput('exists', 'true');
-              return existingPR;
-            }
-            
-            // Create new PR
-            const { data: pr } = await github.rest.pulls.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: title,
-              body: body,
-              head: source,
-              base: target,
-              draft: draft
-            });
-            
-            console.log(`Created PR #${pr.number}: ${pr.html_url}`);
-            
-            // Add labels if any
-            if (labels.length > 0) {
-              await github.rest.issues.addLabels({
+            try {
+              // Check if PR already exists
+              const { data: pulls } = await github.rest.pulls.list({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: pr.number,
-                labels: labels
+                head: `${context.repo.owner}:${source}`,
+                base: target,
+                state: 'open'
               });
+              
+              if (pulls.length > 0) {
+                const existingPR = pulls[0];
+                console.log(`PR already exists: #${existingPR.number}`);
+                core.setOutput('number', existingPR.number);
+                core.setOutput('url', existingPR.html_url);
+                core.setOutput('exists', 'true');
+                core.setOutput('error', 'false');
+                return existingPR;
+              }
+              
+              // Create new PR
+              const { data: pr } = await github.rest.pulls.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: body,
+                head: source,
+                base: target,
+                draft: draft
+              });
+              
+              console.log(`Created PR #${pr.number}: ${pr.html_url}`);
+              
+              // Add labels if any
+              if (labels.length > 0) {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  labels: labels
+                });
+              }
+              
+              core.setOutput('number', pr.number);
+              core.setOutput('url', pr.html_url);
+              core.setOutput('exists', 'false');
+              core.setOutput('error', 'false');
+              return pr;
+            } catch (error) {
+              console.error('Failed to create PR:', error.message);
+              core.setOutput('error', 'true');
+              core.setOutput('error_message', error.message);
+              
+              // Post error comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `❌ **Failed to Create Pull Request**\n\n**Error**: ${error.message}\n\n**Source**: \`${source}\`\n**Target**: \`${target}\`\n\n### Possible reasons:\n- No commits between the branches\n- Branch doesn't exist\n- Permission issues\n\n### Try:\n1. Make sure you have commits in \`${source}\`\n2. Push your changes: \`git push origin ${source}\`\n3. Run \`/start pr\` again`
+              });
+              
+              throw error;
             }
             
-            core.setOutput('number', pr.number);
-            core.setOutput('url', pr.html_url);
-            core.setOutput('exists', 'false');
-            return pr;
-            
       - name: Comment result
+        if: steps.pr.outputs.error != 'true'
         uses: actions/github-script@v7
         with:
           script: |
