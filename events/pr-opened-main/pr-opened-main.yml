@@ -90,7 +90,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: prNumber,
-              body: '/release beta'
+              body: '/release --prerelease beta'
             });
             
-            console.log(`✅ Triggered /release beta for PR #${prNumber}`);
+            console.log(`✅ Triggered /release --prerelease beta for PR #${prNumber}`);
