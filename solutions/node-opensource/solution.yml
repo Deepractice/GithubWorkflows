@@ -16,10 +16,11 @@ components:
     - release    # /release - 创建版本
     - publish    # /publish - 发布到 NPM
   
-  # 自动化流程
-  flows:
-    - auto-preview-release-after-pr    # PR 合并后自动预览发布状态
-    - auto-create-changeset-on-pr      # PR 创建时自动生成 changeset
+  # 事件触发器（透明的自动化）
+  # 所有事件通过发送命令评论来触发对应操作，保持完全透明
+  events:
+    - pr-opened           # PR 创建时 → 触发 /changeset --auto
+    - pr-merged-develop   # PR 合并到 develop → 触发 /release --preview
   
   # Issue 标签
   labels:
