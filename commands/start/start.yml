@@ -782,13 +782,14 @@ jobs:
         if: steps.check.outputs.has_changesets == 'true' && steps.branch.outputs.exists != 'true' && steps.parse.outputs.preview != 'true'
         id: pr
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           BRANCH="${{ steps.branch.outputs.branch }}"
           VERSION="${{ steps.consume.outputs.new_version }}"
           
-          # Create PR from release to main
-          PR_URL=$(gh pr create \
+          # Try to create PR from release to main
+          set +e
+          PR_OUTPUT=$(gh pr create \
             --base main \
             --head "$BRANCH" \
             --title "🚀 Release $VERSION" \
@@ -813,9 +814,20 @@ jobs:
             ### Notes
             This release branch was created from develop with accumulated changesets.
             All changesets have been consumed and cleared from develop.
-            ")
-            
-          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+            " 2>&1)
+          PR_EXIT_CODE=$?
+          set -e
+          
+          if [ $PR_EXIT_CODE -eq 0 ]; then
+            echo "pr_url=$PR_OUTPUT" >> $GITHUB_OUTPUT
+            echo "pr_created=true" >> $GITHUB_OUTPUT
+            echo "✅ PR created successfully: $PR_OUTPUT"
+          else
+            echo "pr_created=false" >> $GITHUB_OUTPUT
+            echo "pr_error=$PR_OUTPUT" >> $GITHUB_OUTPUT
+            echo "⚠️ Failed to create PR automatically: $PR_OUTPUT"
+            echo "⚠️ You may need to create the PR manually or configure PAT_TOKEN secret"
+          fi
           
       - name: Comment result
         uses: actions/github-script@v7
