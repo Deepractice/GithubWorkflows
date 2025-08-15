@@ -94,12 +94,12 @@ jobs:
             // Wait a moment for the notification to be posted
             await new Promise(resolve => setTimeout(resolve, 1000));
             
-            // Post the release preview command
+            // Post the start release preview command
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: pr.number,
-              body: '/release --preview'
+              body: '/start release --preview'
             });
             
-            console.log(`✅ Triggered /release --preview for merged PR #${pr.number}`);
+            console.log(`✅ Triggered /start release --preview for merged PR #${pr.number}`);
