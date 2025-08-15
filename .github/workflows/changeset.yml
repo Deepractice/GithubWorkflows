@@ -133,7 +133,7 @@ jobs:
             echo "Invalid command format"
           fi
       
-      - name: Check Existing Changeset
+      - name: Check and Remove Existing Changeset
         if: steps.permissions.outputs.allowed == 'true' && steps.parse.outputs.valid == 'true'
         id: check
         shell: bash
@@ -142,21 +142,32 @@ jobs:
           
           # Check for existing changeset files in various formats
           FOUND=false
+          REMOVED_FILES=""
           
           # Node.js changeset
-          if ls .changeset/*-pr-${PR_NUMBER}-*.md 2>/dev/null | grep -q .; then
-            echo "Existing Node.js changeset found for PR #${PR_NUMBER}"
-            FOUND=true
-          fi
+          for file in .changeset/*-pr-${PR_NUMBER}-*.md .changeset/*pr-${PR_NUMBER}*.md; do
+            if [ -f "$file" ]; then
+              echo "Found existing Node.js changeset: $file"
+              git rm "$file" 2>/dev/null || rm "$file"
+              REMOVED_FILES="${REMOVED_FILES} $(basename $file)"
+              FOUND=true
+            fi
+          done
           
           # Python/Go/Generic changes
-          if ls .changes/*${PR_NUMBER}* 2>/dev/null | grep -q .; then
-            echo "Existing changeset found for PR #${PR_NUMBER}"
-            FOUND=true
-          fi
+          for file in .changes/*${PR_NUMBER}*; do
+            if [ -f "$file" ]; then
+              echo "Found existing changeset: $file"
+              git rm "$file" 2>/dev/null || rm "$file"
+              REMOVED_FILES="${REMOVED_FILES} $(basename $file)"
+              FOUND=true
+            fi
+          done
           
           if [ "$FOUND" = "true" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
+            echo "removed_files=$REMOVED_FILES" >> $GITHUB_OUTPUT
+            echo "✅ Removed existing changesets: $REMOVED_FILES"
           else
             echo "exists=false" >> $GITHUB_OUTPUT
             echo "No existing changeset for PR #${PR_NUMBER}"
@@ -242,8 +253,7 @@ jobs:
       - name: Create Changeset File
         if: |
           steps.permissions.outputs.allowed == 'true' &&
-          steps.parse.outputs.valid == 'true' &&
-          steps.check.outputs.exists != 'true'
+          steps.parse.outputs.valid == 'true'
         shell: bash
         run: |
           # Determine version type based on mode
@@ -288,8 +298,7 @@ jobs:
       - name: Commit and Push
         if: |
           steps.permissions.outputs.allowed == 'true' &&
-          steps.parse.outputs.valid == 'true' &&
-          steps.check.outputs.exists != 'true'
+          steps.parse.outputs.valid == 'true'
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
@@ -298,26 +307,42 @@ jobs:
           # Add both .changeset and .changes directories (one will exist based on project type)
           git add .changeset/ 2>/dev/null || true
           git add .changes/ 2>/dev/null || true
-          git commit -m "📦 Add ${{ steps.parse.outputs.type }} changeset for PR #${{ steps.pr.outputs.number }}"
+          
+          # Determine commit message based on whether we're updating or creating
+          if [ "${{ steps.check.outputs.exists }}" == "true" ]; then
+            COMMIT_MSG="📦 Update changeset for PR #${{ steps.pr.outputs.number }}"
+          else
+            COMMIT_MSG="📦 Add changeset for PR #${{ steps.pr.outputs.number }}"
+          fi
+          
+          git commit -m "$COMMIT_MSG"
           git push origin ${{ steps.pr.outputs.branch }}
       
       - name: Post Success Comment
         if: |
           steps.permissions.outputs.allowed == 'true' &&
-          steps.parse.outputs.valid == 'true' &&
-          steps.check.outputs.exists != 'true'
+          steps.parse.outputs.valid == 'true'
         uses: actions/github-script@v7
         with:
           script: |
             const mode = '${{ steps.parse.outputs.mode }}';
             const type = mode === 'auto' ? '${{ steps.analyze.outputs.type }}' : '${{ steps.parse.outputs.type }}';
+            const existed = '${{ steps.check.outputs.exists }}' === 'true';
             const emoji = {
               'patch': '🩹',
               'minor': '✨',
               'major': '💥'
             }[type];
             
-            let message = `${emoji} **Created ${type} changeset**\n\n`;
+            const action = existed ? 'Updated' : 'Created';
+            let message = `${emoji} **${action} ${type} changeset**\n\n`;
+            
+            if (existed) {
+              const removedFiles = '${{ steps.check.outputs.removed_files }}';
+              if (removedFiles) {
+                message += `📝 **Replaced previous changeset(s):** ${removedFiles}\n\n`;
+              }
+            }
             
             if (mode === 'auto') {
               message += `🤖 **Auto-detected version type based on commit analysis**\n\n`;
@@ -368,17 +393,3 @@ jobs:
               content: 'confused'
             });
       
-      - name: Handle Existing Changeset
-        if: |
-          steps.permissions.outputs.allowed == 'true' &&
-          steps.parse.outputs.valid == 'true' &&
-          steps.check.outputs.exists == 'true'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: `⚠️ **Changeset already exists**\n\nA changeset for PR #${{ steps.pr.outputs.number }} already exists. If you need to modify it, please edit the file directly.`
-            });

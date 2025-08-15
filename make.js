@@ -106,20 +106,34 @@ function assembleCommands() {
   });
 }
 
-// 2.5 组装自动化流程
-function assembleFlows() {
-  const flows = solutionConfig.components.flows || [];
-  if (flows.length === 0) return;
+// 2.5 组装事件触发器（新架构：透明的自动化）
+function assembleEvents() {
+  const events = solutionConfig.components.events || [];
+  const flows = solutionConfig.components.flows || []; // 保持向后兼容
   
-  log('\n2.5 组装自动化流程', 'green');
+  // 合并 events 和 flows（向后兼容）
+  const allAutomations = [...new Set([...events, ...flows])];
   
-  flows.forEach(flow => {
-    const flowFile = path.join(__dirname, 'flows', flow, `${flow}.yml`);
-    if (fs.existsSync(flowFile)) {
-      fs.copyFileSync(flowFile, path.join(outputPath, 'workflows', `${flow}.yml`));
-      success(`复制流程: ${flow}`);
+  if (allAutomations.length === 0) return;
+  
+  log('\n2.5 组装自动化触发器', 'green');
+  
+  allAutomations.forEach(item => {
+    // 优先查找 events 目录
+    let sourceFile = path.join(__dirname, 'events', item, `${item}.yml`);
+    let sourceType = 'event';
+    
+    // 如果 events 中不存在，尝试 flows 目录（向后兼容）
+    if (!fs.existsSync(sourceFile)) {
+      sourceFile = path.join(__dirname, 'flows', item, `${item}.yml`);
+      sourceType = 'flow';
+    }
+    
+    if (fs.existsSync(sourceFile)) {
+      fs.copyFileSync(sourceFile, path.join(outputPath, 'workflows', `${item}.yml`));
+      success(`复制${sourceType === 'event' ? '事件' : '流程'}: ${item}`);
     } else {
-      log(`   ⚠️  流程 '${flow}' 不存在`, 'yellow');
+      log(`   ⚠️  ${item} 不存在于 events 或 flows 目录`, 'yellow');
     }
   });
 }
@@ -214,6 +228,18 @@ function generateConfigDoc() {
     doc += `- \`/${cmd}\`\n`;
   });
   
+  doc += '\n## 自动化事件\n\n';
+  
+  const events = solutionConfig.components.events || [];
+  const flows = solutionConfig.components.flows || [];
+  const allAutomations = [...new Set([...events, ...flows])];
+  
+  if (allAutomations.length > 0) {
+    allAutomations.forEach(item => {
+      doc += `- \`${item}\`\n`;
+    });
+  }
+  
   doc += '\n## 环境变量\n\n';
   
   if (solutionConfig.environment?.secrets) {
@@ -231,7 +257,7 @@ function generateConfigDoc() {
 try {
   copyBranchStrategy();
   assembleCommands();
-  assembleFlows();
+  assembleEvents();  // 更新函数名
   generateLabels();
   copyIssueTemplates();
   generateConfigDoc();
