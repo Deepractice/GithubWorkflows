@@ -107,7 +107,7 @@ jobs:
               .replace(/^-|-$/g, '')
               .substring(0, 50);
             
-            const branchName = `${type}/${issueNumber}-${sanitizedTitle}`;
+            const branchName = `${type}/#${issueNumber}-${sanitizedTitle}`;
             
             core.setOutput('title', issue.title);
             core.setOutput('number', issueNumber);
