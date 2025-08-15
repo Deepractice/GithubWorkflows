@@ -32,21 +32,25 @@ check-act:
 test: test-all ## Run all tests (alias for test-all)
 
 test-all: check-act ## Run all workflow tests
-	@echo "$(YELLOW)Testing /start issue command$(NC)"
+	@echo "$(YELLOW)Testing /start commands$(NC)"
 	@echo ""
-	@echo "$(GREEN)=== Basic Test ===$(NC)"
+	@echo "$(GREEN)=== Development Mode Tests ===$(NC)"
+	@$(MAKE) test-dev-basic
+	@echo ""
+	@$(MAKE) test-dev-with-issue
+	@echo ""
+	@$(MAKE) test-dev-from-branch
+	@echo ""
+	@echo "$(GREEN)=== Release Mode Tests ===$(NC)"
+	@$(MAKE) test-release-basic
+	@echo ""
+	@$(MAKE) test-release-with-version
+	@echo ""
+	@$(MAKE) test-release-no-changesets
+	@echo ""
+	@echo "$(GREEN)=== Legacy Tests (Backward Compatibility) ===$(NC)"
 	@$(MAKE) test-basic
 	@echo ""
-	@echo "$(GREEN)=== From Branch Test ===$(NC)"
-	@$(MAKE) test-from-branch
-	@echo ""
-	@echo "$(GREEN)=== Chinese Title Test ===$(NC)"
-	@$(MAKE) test-chinese
-	@echo ""
-	@echo "$(GREEN)=== Bug Type Test ===$(NC)"
-	@$(MAKE) test-bug
-	@echo ""
-	@echo "$(GREEN)=== Branch Exists Test ===$(NC)"
 	@$(MAKE) test-exists
 	@echo ""
 	@echo "$(GREEN)✅ All tests completed!$(NC)"
@@ -102,6 +106,62 @@ test-invalid: check-act ## Test invalid command format
 		-e fixtures/start-issue-invalid.json \
 		-W ../start.yml \
 		-j start-issue \
+		$(ACT_OPTS) \
+		--dryrun
+
+# Development mode tests
+test-dev-basic: check-act ## Test basic /start development
+	@echo "$(YELLOW)Testing: /start development$(NC)"
+	@act issue_comment \
+		-e fixtures/start-dev-basic.json \
+		-W ../start.yml \
+		-j start-development \
+		$(ACT_OPTS) \
+		--dryrun
+
+test-dev-with-issue: check-act ## Test /start development with issue number
+	@echo "$(YELLOW)Testing: /start development #123$(NC)"
+	@act issue_comment \
+		-e fixtures/start-dev-with-issue.json \
+		-W ../start.yml \
+		-j start-development \
+		$(ACT_OPTS) \
+		--dryrun
+
+test-dev-from-branch: check-act ## Test /start development with custom branch
+	@echo "$(YELLOW)Testing: /start development --from-branch main$(NC)"
+	@act issue_comment \
+		-e fixtures/start-dev-from-branch.json \
+		-W ../start.yml \
+		-j start-development \
+		$(ACT_OPTS) \
+		--dryrun
+
+# Release mode tests  
+test-release-basic: check-act ## Test basic /start release
+	@echo "$(YELLOW)Testing: /start release$(NC)"
+	@act issue_comment \
+		-e fixtures/start-release-basic.json \
+		-W ../start.yml \
+		-j start-release \
+		$(ACT_OPTS) \
+		--dryrun
+
+test-release-with-version: check-act ## Test /start release with version
+	@echo "$(YELLOW)Testing: /start release 1.2.0$(NC)"
+	@act issue_comment \
+		-e fixtures/start-release-with-version.json \
+		-W ../start.yml \
+		-j start-release \
+		$(ACT_OPTS) \
+		--dryrun
+
+test-release-no-changesets: check-act ## Test /start release without changesets
+	@echo "$(YELLOW)Testing: /start release (no changesets)$(NC)"
+	@act issue_comment \
+		-e fixtures/start-release-no-changesets.json \
+		-W ../start.yml \
+		-j start-release \
 		$(ACT_OPTS) \
 		--dryrun
 

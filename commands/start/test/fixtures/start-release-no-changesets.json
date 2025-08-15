@@ -1,0 +1,32 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 60,
+    "title": "Empty release attempt",
+    "user": {
+      "login": "maintainer"
+    },
+    "assignee": null,
+    "labels": [
+      {
+        "name": "release"
+      }
+    ],
+    "pull_request": null
+  },
+  "comment": {
+    "id": 6,
+    "body": "/start release",
+    "user": {
+      "login": "maintainer"
+    }
+  },
+  "repository": {
+    "name": "test-repo",
+    "owner": {
+      "login": "test-org"
+    },
+    "default_branch": "main"
+  },
+  "_note": "This test simulates a scenario where develop branch has no changesets"
+}

@@ -1,0 +1,31 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 10,
+    "title": "Add user authentication feature",
+    "user": {
+      "login": "testuser"
+    },
+    "assignee": null,
+    "labels": [
+      {
+        "name": "type:feature"
+      }
+    ],
+    "pull_request": null
+  },
+  "comment": {
+    "id": 1,
+    "body": "/start development",
+    "user": {
+      "login": "testuser"
+    }
+  },
+  "repository": {
+    "name": "test-repo",
+    "owner": {
+      "login": "test-org"
+    },
+    "default_branch": "main"
+  }
+}

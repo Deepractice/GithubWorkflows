@@ -1,0 +1,28 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 101,
+    "title": "fix: Resolve memory leak in cache system",
+    "user": {
+      "login": "developer2"
+    },
+    "pull_request": {
+      "url": "https://api.github.com/repos/test-org/test-repo/pulls/101"
+    }
+  },
+  "comment": {
+    "id": 11,
+    "body": "/changeset --auto",
+    "user": {
+      "login": "developer2"
+    }
+  },
+  "repository": {
+    "name": "test-repo",
+    "owner": {
+      "login": "test-org"
+    },
+    "default_branch": "main"
+  },
+  "_note": "Tests explicit auto mode - should detect patch version due to fix:"
+}

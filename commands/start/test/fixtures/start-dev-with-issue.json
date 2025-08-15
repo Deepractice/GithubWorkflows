@@ -1,0 +1,27 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 20,
+    "title": "Current issue for command context",
+    "user": {
+      "login": "testuser"
+    },
+    "assignee": null,
+    "labels": [],
+    "pull_request": null
+  },
+  "comment": {
+    "id": 2,
+    "body": "/start development #123",
+    "user": {
+      "login": "testuser"
+    }
+  },
+  "repository": {
+    "name": "test-repo",
+    "owner": {
+      "login": "test-org"
+    },
+    "default_branch": "main"
+  }
+}
