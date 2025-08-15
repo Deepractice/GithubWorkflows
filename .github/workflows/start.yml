@@ -151,13 +151,12 @@ jobs:
             const assignee = '${{ steps.issue.outputs.assignee }}';
             const currentUser = context.payload.comment.user.login;
             
-            // Update issue state and assignee
+            // Update issue assignee only
             if (!branchExists) {
               const updates = {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: parseInt(issueNumber),
-                labels: ['in-progress']
+                issue_number: parseInt(issueNumber)
               };
               
               // Assign to command user if no assignee
