@@ -7,7 +7,7 @@
 - **解决方案**: node-opensource
 - **描述**: Node.js 开源项目的 GitHub 工作流
 - **分支策略**: dual-flow
-- **生成时间**: 2025-08-15T08:22:35.630Z
+- **生成时间**: 2025-08-15T08:51:01.045Z
 
 ## 启用的命令
 
@@ -19,10 +19,8 @@
 
 ## 自动化事件
 
-- `pr-opened-develop`
+- `pr-opened`
 - `pr-merged-develop`
-- `pr-opened-main`
-- `pr-merged-main`
 
 ## 环境变量
 

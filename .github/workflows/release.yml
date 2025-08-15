@@ -251,8 +251,18 @@ jobs:
         shell: bash
         run: |
           PROJECT_TYPE="${{ steps.detect.outputs.project_type }}"
+          SOURCE_BRANCH="${{ steps.branch.outputs.source_branch }}"
           HAS_CHANGESETS=false
           CHANGESET_COUNT=0
+          
+          # If on a release branch, skip changeset check (already consumed by /start release)
+          if [[ "$SOURCE_BRANCH" =~ ^release/ ]]; then
+            echo "📦 On release branch - changesets already consumed during /start release"
+            echo "has_changesets=false" >> $GITHUB_OUTPUT
+            echo "skip_check=true" >> $GITHUB_OUTPUT
+            echo "count=0" >> $GITHUB_OUTPUT
+            exit 0
+          fi
           
           case "$PROJECT_TYPE" in
             node)
@@ -274,6 +284,7 @@ jobs:
           esac
           
           echo "has_changesets=$HAS_CHANGESETS" >> $GITHUB_OUTPUT
+          echo "skip_check=false" >> $GITHUB_OUTPUT
           echo "count=$CHANGESET_COUNT" >> $GITHUB_OUTPUT
           
           if [ "$HAS_CHANGESETS" = "true" ]; then
@@ -285,15 +296,55 @@ jobs:
       - name: Calculate version
         if: |
           steps.permissions.outputs.allowed == 'true' &&
-          (steps.changesets.outputs.has_changesets == 'true' || steps.parse.outputs.graduate == 'true')
+          (steps.changesets.outputs.has_changesets == 'true' || 
+           steps.parse.outputs.graduate == 'true' ||
+           steps.changesets.outputs.skip_check == 'true')
         id: version
         shell: bash
         run: |
           PROJECT_TYPE="${{ steps.detect.outputs.project_type }}"
+          SOURCE_BRANCH="${{ steps.branch.outputs.source_branch }}"
           PRERELEASE="${{ steps.parse.outputs.prerelease }}"
           GRADUATE="${{ steps.parse.outputs.graduate }}"
           FORCE_VERSION="${{ steps.parse.outputs.force_version }}"
           HAS_LOCK="${{ steps.lock.outputs.has_lock }}"
+          SKIP_CHECK="${{ steps.changesets.outputs.skip_check }}"
+          
+          # If on release branch, use current package.json version
+          if [ "$SKIP_CHECK" = "true" ] && [[ "$SOURCE_BRANCH" =~ ^release/ ]]; then
+            CURRENT_VERSION=$(node -p "require('./package.json').version")
+            
+            # Add prerelease suffix if specified
+            if [ -n "$PRERELEASE" ]; then
+              # Check if version already has prerelease
+              if [[ "$CURRENT_VERSION" =~ -([a-z]+)\.([0-9]+)$ ]]; then
+                # Increment existing prerelease
+                BASE_VERSION="${CURRENT_VERSION%%-*}"
+                EXISTING_PRE="${BASH_REMATCH[1]}"
+                EXISTING_NUM="${BASH_REMATCH[2]}"
+                
+                if [ "$EXISTING_PRE" = "$PRERELEASE" ]; then
+                  NEW_NUM=$((EXISTING_NUM + 1))
+                  NEW_VERSION="${BASE_VERSION}-${PRERELEASE}.${NEW_NUM}"
+                else
+                  NEW_VERSION="${BASE_VERSION}-${PRERELEASE}.0"
+                fi
+              else
+                # Add new prerelease
+                NEW_VERSION="${CURRENT_VERSION}-${PRERELEASE}.0"
+              fi
+              IS_PRERELEASE=true
+            else
+              # Use version as-is for stable release
+              NEW_VERSION="$CURRENT_VERSION"
+              IS_PRERELEASE=false
+            fi
+            
+            echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+            echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+            echo "📦 Using version from package.json: $NEW_VERSION"
+            exit 0
+          fi
           
           # Export for scripts
           export PROJECT_TYPE
@@ -351,7 +402,9 @@ jobs:
         if: |
           steps.permissions.outputs.allowed == 'true' &&
           steps.parse.outputs.preview != 'true' &&
-          (steps.changesets.outputs.has_changesets == 'true' || steps.parse.outputs.graduate == 'true')
+          (steps.changesets.outputs.has_changesets == 'true' || 
+           steps.parse.outputs.graduate == 'true' ||
+           steps.changesets.outputs.skip_check == 'true')
         id: release
         shell: bash
         run: |
@@ -499,7 +552,8 @@ jobs:
           steps.permissions.outputs.allowed == 'true' &&
           steps.parse.outputs.preview != 'true' &&
           steps.changesets.outputs.has_changesets != 'true' &&
-          steps.parse.outputs.graduate != 'true'
+          steps.parse.outputs.graduate != 'true' &&
+          steps.changesets.outputs.skip_check != 'true'
         uses: actions/github-script@v7
         with:
           script: |
