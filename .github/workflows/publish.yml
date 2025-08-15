@@ -100,6 +100,12 @@ jobs:
             const { owner, repo } = context.repo;
             const username = context.payload.comment.user.login;
             
+            // Allow github-actions bot for automated workflows
+            if (username === 'github-actions[bot]' || username === 'github-actions') {
+              console.log('Allowing github-actions bot');
+              return true;
+            }
+            
             try {
               // 检查用户权限
               const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({

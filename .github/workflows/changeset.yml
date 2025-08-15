@@ -25,6 +25,13 @@ jobs:
             const username = context.payload.comment.user.login;
             console.log(`Checking permissions for user: ${username}`);
             
+            // Allow github-actions bot for automated workflows
+            if (username === 'github-actions[bot]' || username === 'github-actions') {
+              console.log('Allowing github-actions bot');
+              core.setOutput('allowed', true);
+              return;
+            }
+            
             try {
               // Get user's permission level
               const { data: perm } = await github.rest.repos.getCollaboratorPermissionLevel({
