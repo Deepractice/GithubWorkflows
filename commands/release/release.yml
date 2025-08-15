@@ -36,6 +36,13 @@ jobs:
           script: |
             const username = '${{ github.event.comment.user.login }}';
             
+            // Allow github-actions bot for automated workflows
+            if (username === 'github-actions[bot]' || username === 'github-actions') {
+              console.log('Allowing github-actions bot');
+              core.setOutput('allowed', true);
+              return;
+            }
+            
             try {
               const { data: perm } = await github.rest.repos.getCollaboratorPermissionLevel({
                 owner: context.repo.owner,
