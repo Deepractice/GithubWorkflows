@@ -5,6 +5,10 @@ set -e
 
 echo "Executing Node.js release for version $VERSION"
 
+# Configure git first (needed for all git operations)
+git config user.name "github-actions[bot]"
+git config user.email "github-actions[bot]@users.noreply.github.com"
+
 # Update package.json version
 if [ -f "package.json" ]; then
   # Update version in package.json
@@ -85,12 +89,6 @@ $CHANGELOG_ENTRY" > CHANGELOG.md
 fi
 
 echo "Updated CHANGELOG.md"
-
-# Configure git (if not already configured)
-if ! git config user.name > /dev/null 2>&1; then
-  git config user.name "github-actions[bot]"
-  git config user.email "github-actions[bot]@users.noreply.github.com"
-fi
 
 # Commit changes
 git add package.json package-lock.json yarn.lock pnpm-lock.yaml CHANGELOG.md 2>/dev/null || true
