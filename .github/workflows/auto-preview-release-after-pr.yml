@@ -1,4 +1,4 @@
-name: Auto Release Preview
+name: Auto Preview Release After PR
 
 on:
   pull_request:

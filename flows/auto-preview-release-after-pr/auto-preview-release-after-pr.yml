@@ -1,0 +1,158 @@
+name: Auto Preview Release After PR
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [develop, dev]
+
+jobs:
+  preview-release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: read
+      
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref }}
+          fetch-depth: 0
+          
+      - name: Check changesets
+        id: check
+        run: |
+          # Count available changesets
+          CHANGESET_COUNT=$(ls -1 .changeset/*.md 2>/dev/null | grep -v README.md | wc -l)
+          echo "changeset_count=$CHANGESET_COUNT" >> $GITHUB_OUTPUT
+          
+          if [ "$CHANGESET_COUNT" -eq 0 ]; then
+            echo "has_changesets=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "has_changesets=true" >> $GITHUB_OUTPUT
+          
+          # Count by type
+          MAJOR_COUNT=0
+          MINOR_COUNT=0
+          PATCH_COUNT=0
+          
+          for file in .changeset/*.md; do
+            [ -f "$file" ] || continue
+            [ "$file" = ".changeset/README.md" ] && continue
+            
+            if grep -q '"[^"]*":[[:space:]]*"major"' "$file"; then
+              MAJOR_COUNT=$((MAJOR_COUNT + 1))
+            elif grep -q '"[^"]*":[[:space:]]*"minor"' "$file"; then
+              MINOR_COUNT=$((MINOR_COUNT + 1))
+            elif grep -q '"[^"]*":[[:space:]]*"patch"' "$file"; then
+              PATCH_COUNT=$((PATCH_COUNT + 1))
+            fi
+          done
+          
+          # Determine next version type
+          if [ $MAJOR_COUNT -gt 0 ]; then
+            VERSION_TYPE="major"
+          elif [ $MINOR_COUNT -gt 0 ]; then
+            VERSION_TYPE="minor"
+          else
+            VERSION_TYPE="patch"
+          fi
+          
+          echo "major_count=$MAJOR_COUNT" >> $GITHUB_OUTPUT
+          echo "minor_count=$MINOR_COUNT" >> $GITHUB_OUTPUT
+          echo "patch_count=$PATCH_COUNT" >> $GITHUB_OUTPUT
+          echo "version_type=$VERSION_TYPE" >> $GITHUB_OUTPUT
+          
+      - name: Get current version
+        if: steps.check.outputs.has_changesets == 'true'
+        id: version
+        run: |
+          CURRENT_VERSION=$(node -p "require('./package.json').version" 2>/dev/null || echo "0.0.0")
+          
+          # Calculate next version based on type
+          VERSION_TYPE="${{ steps.check.outputs.version_type }}"
+          IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
+          
+          case "$VERSION_TYPE" in
+            major)
+              NEXT_VERSION="$((major + 1)).0.0"
+              ;;
+            minor)
+              NEXT_VERSION="$major.$((minor + 1)).0"
+              ;;
+            patch)
+              NEXT_VERSION="$major.$minor.$((patch + 1))"
+              ;;
+          esac
+          
+          echo "current=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "next=$NEXT_VERSION" >> $GITHUB_OUTPUT
+          
+      - name: Post preview comment
+        if: steps.check.outputs.has_changesets == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const changesetCount = '${{ steps.check.outputs.changeset_count }}';
+            const majorCount = '${{ steps.check.outputs.major_count }}';
+            const minorCount = '${{ steps.check.outputs.minor_count }}';
+            const patchCount = '${{ steps.check.outputs.patch_count }}';
+            const versionType = '${{ steps.check.outputs.version_type }}';
+            const currentVersion = '${{ steps.version.outputs.current }}';
+            const nextVersion = '${{ steps.version.outputs.next }}';
+            
+            let emoji = '🩹';
+            if (versionType === 'major') emoji = '💥';
+            else if (versionType === 'minor') emoji = '✨';
+            
+            const message = `### 🎯 Release Status Update
+            
+            After merging PR #${{ github.event.pull_request.number }}, the next release will be:
+            
+            **Version**: \`${currentVersion}\` → \`${nextVersion}\` (${emoji} ${versionType})
+            **Accumulated changesets**: ${changesetCount}
+            
+            ### Breakdown:
+            - 💥 Major: ${majorCount}
+            - ✨ Minor: ${minorCount}
+            - 🩹 Patch: ${patchCount}
+            
+            ### Actions:
+            - 🚀 **Ready to release?** Run \`/start release\` in any issue
+            - 👁️ **Want more details?** Run \`/start release --preview\`
+            - ⏳ **Not ready?** Continue accumulating changesets
+            
+            ---
+            _This is an automated message after PR merge to ${github.base_ref}_
+            `;
+            
+            // Comment on the merged PR
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: message
+            });
+            
+            // Also create an issue if this is a major version
+            if (versionType === 'major') {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `📢 Major version ${nextVersion} ready for release`,
+                body: `A major version bump is ready for release!
+                
+                **Version**: ${nextVersion}
+                **Breaking changes detected**: Yes
+                
+                Please review the accumulated changesets and run \`/start release\` when ready.
+                
+                cc @${context.repo.owner}`,
+                labels: ['release', 'breaking-change']
+              });
+            }

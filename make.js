@@ -106,6 +106,24 @@ function assembleCommands() {
   });
 }
 
+// 2.5 组装自动化流程
+function assembleFlows() {
+  const flows = solutionConfig.components.flows || [];
+  if (flows.length === 0) return;
+  
+  log('\n2.5 组装自动化流程', 'green');
+  
+  flows.forEach(flow => {
+    const flowFile = path.join(__dirname, 'flows', flow, `${flow}.yml`);
+    if (fs.existsSync(flowFile)) {
+      fs.copyFileSync(flowFile, path.join(outputPath, 'workflows', `${flow}.yml`));
+      success(`复制流程: ${flow}`);
+    } else {
+      log(`   ⚠️  流程 '${flow}' 不存在`, 'yellow');
+    }
+  });
+}
+
 // 3. 生成标签配置
 function generateLabels() {
   log('\n3. 生成标签配置', 'green');
@@ -213,6 +231,7 @@ function generateConfigDoc() {
 try {
   copyBranchStrategy();
   assembleCommands();
+  assembleFlows();
   generateLabels();
   copyIssueTemplates();
   generateConfigDoc();
