@@ -130,10 +130,10 @@
   ```
 - [ ] 验证pr-merged-main事件触发
 
-### 10. 正式版本发布
-- [ ] 在main分支执行 `/release` 命令
+### 10. 正式版本发布（自动）
+- [ ] 验证pr-merged-main事件自动触发 `/release` 命令
   ```bash
-  gh issue comment <ISSUE_NUMBER> --body "/release"
+  gh pr view <RELEASE_PR> --json comments | jq -r '.comments[].body' | grep "/release"
   ```
 - [ ] 验证正式版本创建
   ```bash
@@ -163,9 +163,11 @@
 - [ ] pr-opened-develop: 自动生成changeset
 - [ ] pr-merged-develop: 自动触发release preview
 - [ ] pr-opened-main: 自动触发beta release（需要修复）
+- [ ] pr-merged-main: 自动触发正式release
 - [ ] /start release: 自动创建PR到main
 
 ### 版本标签验证 ✅
+
 - [ ] Beta版本: `v0.1.X-beta.Y` 格式
 - [ ] 正式版本: `v0.1.X` 格式
 - [ ] 版本号递增正确性
@@ -173,18 +175,22 @@
 ## 常见问题
 
 ### 1. PR无法合并
+
 - 检查是否有冲突
 - 使用 `--force` 推送解决冲突后的代码
 
 ### 2. Release命令失败
+
 - 确认在正确的分支上执行
 - 检查是否有必要的权限
 
 ### 3. 自动触发失败
+
 - 检查PAT_TOKEN是否配置
 - 查看workflow日志定位问题
 
 ### 4. 版本号计算错误
+
 - 检查changeset是否正确消费
 - 验证package.json版本号
 
