@@ -98,7 +98,7 @@ jobs:
             
             // Extract type from labels
             const typeLabel = issue.labels.find(l => l.name.startsWith('type:'));
-            const type = typeLabel ? typeLabel.name.split(':')[1] : 'feature';
+            const type = typeLabel ? typeLabel.name.split(':')[1].trim() : 'feature';
             
             // Create branch name
             const sanitizedTitle = issue.title
