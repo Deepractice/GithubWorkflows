@@ -10,8 +10,7 @@ components:
   
   # 启用的命令
   commands:
-    - start      # /start development|release - 开始开发或发布
-    - pr         # /pr - 创建 Pull Request
+    - start      # /start development|pr|release - 开始开发、创建PR或发布
     - test       # /test - 运行测试
     - changeset  # /changeset - 声明变更（默认自动分析）
     - release    # /release - 创建版本

@@ -195,6 +195,347 @@ jobs:
               body: message
             });
 
+  # /start pr - 创建 Pull Request
+  start-pr:
+    if: |
+      github.event.issue.pull_request == null &&
+      startsWith(github.event.comment.body, '/start pr')
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          
+      - name: Parse command
+        id: parse
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comment = context.payload.comment.body;
+            console.log('Parsing command:', comment);
+            
+            // Extract parameters using regex
+            const sourceMatch = comment.match(/--source\s+([^\s]+)/);
+            const targetMatch = comment.match(/--target\s+([^\s]+)/);
+            const titleMatch = comment.match(/--title\s+"([^"]+)"/);
+            const contentMatch = comment.match(/--content\s+"([^"]+)"/);
+            const draftMatch = comment.match(/--draft/);
+            
+            // Set outputs
+            core.setOutput('source', sourceMatch ? sourceMatch[1] : '');
+            core.setOutput('target', targetMatch ? targetMatch[1] : '');
+            core.setOutput('title', titleMatch ? titleMatch[1] : '');
+            core.setOutput('content', contentMatch ? contentMatch[1] : '');
+            core.setOutput('draft', draftMatch ? 'true' : 'false');
+            
+            console.log('Parsed parameters:');
+            console.log(`  source: ${sourceMatch ? sourceMatch[1] : 'auto-detect'}`);
+            console.log(`  target: ${targetMatch ? targetMatch[1] : 'auto-detect'}`);
+            console.log(`  title: ${titleMatch ? titleMatch[1] : 'auto-generate'}`);
+            console.log(`  content: ${contentMatch ? contentMatch[1] : 'auto-generate'}`);
+            console.log(`  draft: ${draftMatch ? 'true' : 'false'}`);
+            
+      - name: Get issue details
+        id: issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = context.issue.number;
+            
+            // Get issue details
+            const { data: issue } = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber
+            });
+            
+            core.setOutput('number', issueNumber);
+            core.setOutput('title', issue.title);
+            core.setOutput('body', issue.body || '');
+            
+            // Extract labels
+            const labels = issue.labels.map(l => l.name);
+            core.setOutput('labels', labels.join(','));
+            
+            console.log(`Issue #${issueNumber}: ${issue.title}`);
+            return issue;
+            
+      - name: Detect source branch
+        id: source
+        run: |
+          SOURCE="${{ steps.parse.outputs.source }}"
+          ISSUE_NUMBER="${{ steps.issue.outputs.number }}"
+          
+          if [ -n "$SOURCE" ]; then
+            echo "Using specified source branch: $SOURCE"
+            # Verify branch exists
+            if ! git show-ref --verify --quiet "refs/remotes/origin/$SOURCE"; then
+              echo "❌ Source branch '$SOURCE' does not exist"
+              exit 1
+            fi
+          else
+            echo "Auto-detecting source branch for issue #$ISSUE_NUMBER"
+            
+            # List all remote branches
+            git fetch origin
+            BRANCHES=$(git branch -r | sed 's/origin\///' | grep -v HEAD)
+            
+            # Look for branches matching the issue number
+            PATTERNS=(
+              "feature/#${ISSUE_NUMBER}-"
+              "fix/#${ISSUE_NUMBER}-"
+              "docs/#${ISSUE_NUMBER}-"
+              "chore/#${ISSUE_NUMBER}-"
+            )
+            
+            for PATTERN in "${PATTERNS[@]}"; do
+              for BRANCH in $BRANCHES; do
+                if [[ "$BRANCH" == *"$PATTERN"* ]]; then
+                  SOURCE="$BRANCH"
+                  echo "Found matching branch: $SOURCE"
+                  break 2
+                fi
+              done
+            done
+            
+            if [ -z "$SOURCE" ]; then
+              echo "❌ Could not find a branch for issue #$ISSUE_NUMBER"
+              echo "Please specify source branch using --source parameter"
+              exit 1
+            fi
+          fi
+          
+          echo "source=$SOURCE" >> $GITHUB_OUTPUT
+          
+      - name: Detect target branch
+        id: target
+        run: |
+          TARGET="${{ steps.parse.outputs.target }}"
+          SOURCE="${{ steps.source.outputs.source }}"
+          
+          if [ -n "$TARGET" ]; then
+            echo "Using specified target branch: $TARGET"
+            # Verify branch exists
+            if ! git show-ref --verify --quiet "refs/remotes/origin/$TARGET"; then
+              echo "❌ Target branch '$TARGET' does not exist"
+              exit 1
+            fi
+          else
+            echo "Auto-detecting target branch based on source: $SOURCE"
+            
+            # Get all branches
+            BRANCHES=$(git branch -r | sed 's/origin\///' | sed 's/^[[:space:]]*//' | grep -v HEAD)
+            
+            # Determine target based on source branch type
+            if [[ "$SOURCE" == feature/* ]]; then
+              # Features go to develop/dev/main
+              for CANDIDATE in develop dev main master; do
+                if echo "$BRANCHES" | grep -qx "$CANDIDATE"; then
+                  TARGET="$CANDIDATE"
+                  echo "Selected target branch: $TARGET"
+                  break
+                fi
+              done
+            elif [[ "$SOURCE" == fix/* ]] || [[ "$SOURCE" == hotfix/* ]]; then
+              # Fixes go to main/master
+              for CANDIDATE in main master; do
+                if echo "$BRANCHES" | grep -qx "$CANDIDATE"; then
+                  TARGET="$CANDIDATE"
+                  echo "Selected target branch: $TARGET"
+                  break
+                fi
+              done
+            elif [[ "$SOURCE" == docs/* ]] || [[ "$SOURCE" == chore/* ]]; then
+              # Docs and chores go to main/master
+              for CANDIDATE in main master; do
+                if echo "$BRANCHES" | grep -qx "$CANDIDATE"; then
+                  TARGET="$CANDIDATE"
+                  echo "Selected target branch: $TARGET"
+                  break
+                fi
+              done
+            fi
+            
+            # Fallback to default branch if not determined
+            if [ -z "$TARGET" ]; then
+              TARGET=$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')
+              echo "Using default branch: $TARGET"
+            fi
+          fi
+          
+          echo "target=$TARGET" >> $GITHUB_OUTPUT
+          
+      - name: Generate PR content
+        id: content
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const source = '${{ steps.source.outputs.source }}';
+            const target = '${{ steps.target.outputs.target }}';
+            const issueNumber = '${{ steps.issue.outputs.number }}';
+            const issueTitle = `${{ steps.issue.outputs.title }}`;
+            const issueBody = `${{ steps.issue.outputs.body }}`;
+            const customTitle = `${{ steps.parse.outputs.title }}`;
+            const customContent = `${{ steps.parse.outputs.content }}`;
+            
+            // Generate PR title
+            let prTitle = customTitle;
+            if (!prTitle) {
+              // Auto-generate from issue title
+              const typePrefix = source.split('/')[0];
+              const typeMap = {
+                'feature': 'feat',
+                'fix': 'fix',
+                'docs': 'docs',
+                'chore': 'chore'
+              };
+              const prefix = typeMap[typePrefix] || 'feat';
+              prTitle = `${prefix}: ${issueTitle}`;
+            }
+            
+            // Generate PR body
+            let prBody = customContent;
+            if (!prBody) {
+              // Auto-generate content
+              prBody = `## 📋 Summary\n${issueTitle}\n\n`;
+              prBody += `## 🔗 Related Issue\nCloses #${issueNumber}\n\n`;
+              
+              if (issueBody) {
+                // Add issue description summary
+                const summary = issueBody.split('\n').slice(0, 5).join('\n');
+                prBody += `## 📝 Description\n${summary}\n\n`;
+              }
+              
+              // Get commit messages between branches
+              prBody += `## ✅ Commits\n`;
+              prBody += `View [commit history](https://github.com/${context.repo.owner}/${context.repo.repo}/compare/${target}...${source})\n\n`;
+              
+              prBody += `## 🧪 Checklist\n`;
+              prBody += `- [ ] Code has been self-reviewed\n`;
+              prBody += `- [ ] Tests pass\n`;
+              prBody += `- [ ] Documentation updated (if needed)\n\n`;
+              
+              prBody += `---\n`;
+              prBody += `*This PR was created by the /start pr command*`;
+            }
+            
+            core.setOutput('title', prTitle);
+            core.setOutput('body', prBody);
+            
+            console.log('Generated PR title:', prTitle);
+            console.log('Generated PR body:', prBody.substring(0, 200) + '...');
+            
+      - name: Create pull request
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          script: |
+            const source = '${{ steps.source.outputs.source }}';
+            const target = '${{ steps.target.outputs.target }}';
+            const title = `${{ steps.content.outputs.title }}`;
+            const body = `${{ steps.content.outputs.body }}`;
+            const draft = '${{ steps.parse.outputs.draft }}' === 'true';
+            const issueNumber = '${{ steps.issue.outputs.number }}';
+            const labels = '${{ steps.issue.outputs.labels }}'.split(',').filter(l => l);
+            
+            // Check if PR already exists
+            const { data: pulls } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:${source}`,
+              base: target,
+              state: 'open'
+            });
+            
+            if (pulls.length > 0) {
+              const existingPR = pulls[0];
+              console.log(`PR already exists: #${existingPR.number}`);
+              core.setOutput('number', existingPR.number);
+              core.setOutput('url', existingPR.html_url);
+              core.setOutput('exists', 'true');
+              return existingPR;
+            }
+            
+            // Create new PR
+            const { data: pr } = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              head: source,
+              base: target,
+              draft: draft
+            });
+            
+            console.log(`Created PR #${pr.number}: ${pr.html_url}`);
+            
+            // Add labels if any
+            if (labels.length > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                labels: labels
+              });
+            }
+            
+            core.setOutput('number', pr.number);
+            core.setOutput('url', pr.html_url);
+            core.setOutput('exists', 'false');
+            return pr;
+            
+      - name: Comment result
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = '${{ steps.pr.outputs.number }}';
+            const prUrl = '${{ steps.pr.outputs.url }}';
+            const exists = '${{ steps.pr.outputs.exists }}' === 'true';
+            const source = '${{ steps.source.outputs.source }}';
+            const target = '${{ steps.target.outputs.target }}';
+            const draft = '${{ steps.parse.outputs.draft }}' === 'true';
+            
+            let message;
+            if (exists) {
+              message = `⚠️ **Pull Request Already Exists**\n\n`;
+              message += `PR #${prNumber} is already open for this branch.\n\n`;
+              message += `**View PR**: ${prUrl}`;
+            } else {
+              message = `✅ **Pull Request Created!**\n\n`;
+              message += `**PR**: #${prNumber}\n`;
+              message += `**Source**: \`${source}\`\n`;
+              message += `**Target**: \`${target}\`\n`;
+              message += `**Status**: ${draft ? '📝 Draft' : '✅ Ready for review'}\n\n`;
+              message += `**View PR**: ${prUrl}\n\n`;
+              message += `### Next Steps:\n`;
+              if (draft) {
+                message += `1. Complete your changes\n`;
+                message += `2. Mark PR as ready for review\n`;
+                message += `3. Request reviewers\n`;
+              } else {
+                message += `1. Wait for CI checks to pass\n`;
+                message += `2. Request reviews\n`;
+                message += `3. Address feedback\n`;
+                message += `4. Merge when approved\n`;
+              }
+            }
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: message
+            });
+
   # /start release - 开始发布流程
   start-release:
     if: |
