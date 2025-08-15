@@ -203,10 +203,25 @@ make help
 
 MIT
 
+## 常见问题
+
+### 如何配置 PAT_TOKEN？
+
+1. 访问 GitHub Settings > Developer settings > Personal access tokens
+2. 创建一个新的 token，权限包括：
+   - `repo` (完整仓库访问)
+   - `workflow` (更新 GitHub Actions)
+3. 在仓库的 Settings > Secrets 中添加 `PAT_TOKEN`
+
+### 工作流链式触发不生效？
+
+确保使用了 PAT_TOKEN 而非默认的 GITHUB_TOKEN。我们的工作流已配置为优先使用 PAT_TOKEN。
+
 ## 相关项目
 
 - [Changesets](https://github.com/changesets/changesets) - 版本管理工具
 - [GitHub Actions](https://docs.github.com/actions) - GitHub 官方文档
+- [act](https://github.com/nektos/act) - 本地测试 GitHub Actions
 
 ---
 
