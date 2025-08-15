@@ -1,9 +1,0 @@
-This is a test file to trigger PR automatic tests.
-
-Testing features:
-1. Automatic test execution on PR creation
-2. Automatic test execution on PR updates
-3. Manual test execution via /test command
-4. Automatic changeset detection via /changeset
-
-This file will be removed after testing.Fix typo
