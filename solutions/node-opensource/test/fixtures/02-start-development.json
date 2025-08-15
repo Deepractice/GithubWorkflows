@@ -1,0 +1,24 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 100,
+    "title": "Test: Complete Workflow",
+    "user": {
+      "login": "test-user"
+    }
+  },
+  "comment": {
+    "id": 1,
+    "body": "/start development",
+    "user": {
+      "login": "test-user"
+    }
+  },
+  "repository": {
+    "owner": {
+      "login": "test-owner"
+    },
+    "name": "test-repo",
+    "default_branch": "main"
+  }
+}
