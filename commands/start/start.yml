@@ -604,6 +604,10 @@ jobs:
           
       - name: Install dependencies
         run: |
+          # Install changesets CLI
+          npm install -g @changesets/cli
+          
+          # Install project dependencies
           if [ -f "pnpm-lock.yaml" ]; then
             npm install -g pnpm
             pnpm install
@@ -645,7 +649,7 @@ jobs:
             CURRENT_VERSION=$(node -p "require('./package.json').version")
             
             # Run changeset version in dry-run mode to see what version it would create
-            npx changeset status --output=changeset-status.json || true
+            changeset status --output=changeset-status.json || true
             
             if [ -f "changeset-status.json" ]; then
               # Parse the suggested version
@@ -742,7 +746,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
           # Run changeset version to consume changesets
-          npx changeset version
+          changeset version
           
           # Get the new version
           NEW_VERSION=$(node -p "require('./package.json').version")
