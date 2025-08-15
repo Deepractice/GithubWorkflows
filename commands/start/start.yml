@@ -101,13 +101,8 @@ jobs:
             const type = typeLabel ? typeLabel.name.split(':')[1].trim() : 'feature';
             
             // Create branch name
-            const sanitizedTitle = issue.title
-              .toLowerCase()
-              .replace(/[^a-z0-9]+/g, '-')
-              .replace(/^-|-$/g, '')
-              .substring(0, 50);
-            
-            const branchName = `${type}/${issueNumber}-${sanitizedTitle}`;
+            // Simple format: type/#issue-issue
+            const branchName = `${type}/#${issueNumber}-issue`;
             
             core.setOutput('title', issue.title);
             core.setOutput('number', issueNumber);
