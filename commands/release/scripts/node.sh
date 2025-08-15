@@ -61,7 +61,8 @@ fi
 
 # Create and push tag
 git tag "v$VERSION" -m "Release v$VERSION"
-git push origin "$BRANCH"
+# Push current branch (we're on the source branch, not target)
+git push origin HEAD
 git push origin "v$VERSION"
 
 echo "✅ Node.js release completed for v$VERSION"
