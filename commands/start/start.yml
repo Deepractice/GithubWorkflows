@@ -755,12 +755,12 @@ jobs:
           Consumed ${{ steps.check.outputs.changeset_count }} changesets from develop branch" || echo "No changes to commit"
           
       - name: Push release branch
-        if: steps.check.outputs.has_changesets == 'true' && steps.branch.outputs.exists != 'true'
+        if: steps.check.outputs.has_changesets == 'true' && steps.branch.outputs.exists != 'true' && steps.parse.outputs.preview != 'true'
         run: |
           git push -u origin "${{ steps.branch.outputs.branch }}"
           
       - name: Clean develop branch
-        if: steps.check.outputs.has_changesets == 'true' && steps.branch.outputs.exists != 'true'
+        if: steps.check.outputs.has_changesets == 'true' && steps.branch.outputs.exists != 'true' && steps.parse.outputs.preview != 'true'
         run: |
           # Switch back to develop
           git checkout develop
@@ -775,7 +775,7 @@ jobs:
           git push origin develop
           
       - name: Create PR
-        if: steps.check.outputs.has_changesets == 'true' && steps.branch.outputs.exists != 'true'
+        if: steps.check.outputs.has_changesets == 'true' && steps.branch.outputs.exists != 'true' && steps.parse.outputs.preview != 'true'
         id: pr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
