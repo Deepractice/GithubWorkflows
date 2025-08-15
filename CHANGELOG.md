@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.5
+
+### Patch Changes
+
+- bf8f99a: feat: 完整工作流测试 - 20250815-2324
+
+  Contributed by @deepracticexs via #58
+
+## 0.1.5
+
+### Patch Changes
+
+- bf8f99a: feat: 完整工作流测试 - 20250815-2324
+
+  Contributed by @deepracticexs via #58
+
 ## 0.1.4
 
 ### Patch Changes
