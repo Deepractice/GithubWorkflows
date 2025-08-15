@@ -1,10 +1,11 @@
 #!/bin/bash
 # Generic implementation of changeset (for unknown project types)
 
-TYPE=$1
-MESSAGE=$2
-PR_NUMBER=$3
-PR_AUTHOR=$4
+# Get parameters from environment variables (set by changeset.yml)
+TYPE=${CHANGESET_TYPE:-patch}
+MESSAGE=${CHANGESET_MESSAGE:-"Update"}
+PR_NUMBER=${PR_NUMBER:-""}
+PR_AUTHOR=${PR_AUTHOR:-"unknown"}
 
 # Create .changes directory (generic location)
 mkdir -p .changes
