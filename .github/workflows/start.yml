@@ -707,11 +707,12 @@ jobs:
             [ "$file" = ".changeset/README.md" ] && continue
             
             # Parse the changeset file to determine version type
-            if grep -q "major" "$file"; then
+            # Look for the version type in the YAML frontmatter
+            if grep -q '": major' "$file"; then
               MAJOR_COUNT=$((MAJOR_COUNT + 1))
-            elif grep -q "minor" "$file"; then
+            elif grep -q '": minor' "$file"; then
               MINOR_COUNT=$((MINOR_COUNT + 1))
-            elif grep -q "patch" "$file"; then
+            elif grep -q '": patch' "$file"; then
               PATCH_COUNT=$((PATCH_COUNT + 1))
             fi
           done
