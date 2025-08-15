@@ -261,6 +261,7 @@ jobs:
         if: |
           steps.permissions.outputs.allowed == 'true' &&
           steps.parse.outputs.valid == 'true'
+        id: create
         shell: bash
         run: |
           # Determine version type based on mode
@@ -300,6 +301,35 @@ jobs:
             ./commands/changeset/scripts/generic.sh
           fi
           
+          # Capture the created changeset file name
+          if [ "$PROJECT_TYPE" == "nodejs" ]; then
+            # For Node.js projects, find the newest .md file in .changeset
+            CHANGESET_FILE=$(ls -t .changeset/*.md 2>/dev/null | grep -v README.md | head -1)
+            if [ -n "$CHANGESET_FILE" ]; then
+              echo "changeset_file=$(basename $CHANGESET_FILE)" >> $GITHUB_OUTPUT
+              echo "changeset_path=$CHANGESET_FILE" >> $GITHUB_OUTPUT
+              
+              # Read the changeset content
+              CHANGESET_CONTENT=$(cat "$CHANGESET_FILE")
+              # Escape for GitHub Actions (replace newlines with %0A)
+              CHANGESET_CONTENT="${CHANGESET_CONTENT//$'\n'/%0A}"
+              echo "changeset_content=$CHANGESET_CONTENT" >> $GITHUB_OUTPUT
+            fi
+          else
+            # For other projects, find in .changes directory
+            CHANGESET_FILE=$(ls -t .changes/*${PR_NUMBER}* 2>/dev/null | head -1)
+            if [ -n "$CHANGESET_FILE" ]; then
+              echo "changeset_file=$(basename $CHANGESET_FILE)" >> $GITHUB_OUTPUT
+              echo "changeset_path=$CHANGESET_FILE" >> $GITHUB_OUTPUT
+              
+              # Read the changeset content
+              CHANGESET_CONTENT=$(cat "$CHANGESET_FILE")
+              # Escape for GitHub Actions
+              CHANGESET_CONTENT="${CHANGESET_CONTENT//$'\n'/%0A}"
+              echo "changeset_content=$CHANGESET_CONTENT" >> $GITHUB_OUTPUT
+            fi
+          fi
+          
           echo "changeset_created=true" >> $GITHUB_OUTPUT
       
       - name: Commit and Push
@@ -335,6 +365,10 @@ jobs:
             const mode = '${{ steps.parse.outputs.mode }}';
             const type = mode === 'auto' ? '${{ steps.analyze.outputs.type }}' : '${{ steps.parse.outputs.type }}';
             const existed = '${{ steps.check.outputs.exists }}' === 'true';
+            const changesetFile = '${{ steps.create.outputs.changeset_file }}';
+            const changesetPath = '${{ steps.create.outputs.changeset_path }}';
+            const changesetContent = `${{ steps.create.outputs.changeset_content }}`.replace(/%0A/g, '\n');
+            
             const emoji = {
               'patch': '🩹',
               'minor': '✨',
@@ -344,25 +378,35 @@ jobs:
             const action = existed ? 'Updated' : 'Created';
             let message = `${emoji} **${action} ${type} changeset**\n\n`;
             
+            // Show changeset file information
+            if (changesetFile) {
+              message += `📄 **Changeset File:** \`${changesetPath}\`\n\n`;
+              
+              // Display changeset content in a code block
+              message += `<details>\n<summary><b>Changeset Content</b> (click to expand)</summary>\n\n`;
+              message += `\`\`\`markdown\n${changesetContent}\n\`\`\`\n\n`;
+              message += `</details>\n\n`;
+            }
+            
             if (existed) {
               const removedFiles = '${{ steps.check.outputs.removed_files }}';
               if (removedFiles) {
-                message += `📝 **Replaced previous changeset(s):** ${removedFiles}\n\n`;
+                message += `♻️ **Replaced:** ${removedFiles}\n\n`;
               }
             }
             
             if (mode === 'auto') {
-              message += `🤖 **Auto-detected version type based on commit analysis**\n\n`;
+              message += `🤖 **Auto-detected from commits**\n`;
               const changes = `${{ steps.analyze.outputs.changes }}`;
               if (changes) {
-                message += `**Detected changes:**\n${changes}\n\n`;
+                message += `\n<details>\n<summary><b>Analyzed commits</b></summary>\n\n${changes}\n\n</details>\n\n`;
               }
             }
             
-            message += `This PR will trigger a ${type} version bump when merged.`;
+            message += `⚡ **Impact:** This PR will trigger a **${type}** version bump when merged.\n`;
             
             if (mode === 'auto') {
-              message += `\n\n💡 _Tip: You can override this by running \`/changeset [patch|minor|major]\` manually._`;
+              message += `\n💡 _Tip: Run \`/changeset [patch|minor|major]\` to override auto-detection._`;
             }
             
             await github.rest.issues.createComment({
