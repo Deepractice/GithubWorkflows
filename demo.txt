@@ -1,2 +1,0 @@
-This is a demo file for testing /start pr command
-Added in feature/#15-issue branch
