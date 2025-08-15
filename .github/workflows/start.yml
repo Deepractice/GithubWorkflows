@@ -5,10 +5,12 @@ on:
     types: [created]
 
 jobs:
-  start-issue:
+  # /start development - 开始开发新功能
+  start-development:
     if: |
       github.event.issue.pull_request == null &&
-      startsWith(github.event.comment.body, '/start issue')
+      (startsWith(github.event.comment.body, '/start development') || 
+       startsWith(github.event.comment.body, '/start dev'))
     runs-on: ubuntu-latest
     
     permissions:
@@ -19,7 +21,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
           fetch-depth: 0
           
       - name: Parse command
@@ -28,8 +30,8 @@ jobs:
         with:
           script: |
             const comment = context.payload.comment.body;
-            // Support both with and without issue number
-            const match = comment.match(/\/start issue(?:\s+(\d+))?(?:\s+--from-branch\s+(\S+))?/);
+            // Support: /start development [#issue] [--from-branch branch]
+            const match = comment.match(/\/start (?:development|dev)(?:\s+#?(\d+))?(?:\s+--from-branch\s+(\S+))?/);
             
             if (!match) {
               core.setFailed('Invalid command format');
@@ -61,10 +63,9 @@ jobs:
               issue_number: parseInt(issueNumber)
             });
             
-            // Auto-detect base branch if not specified
+            // Auto-detect base branch if not specified (prefer develop)
             let fromBranch = fromBranchParam;
             if (!fromBranch) {
-              // Get all branches
               const { data: branches } = await github.rest.repos.listBranches({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -73,7 +74,7 @@ jobs:
               
               const branchNames = branches.map(b => b.name);
               
-              // Priority order: develop > dev > main > master > default
+              // Priority: develop > dev > main > master
               if (branchNames.includes('develop')) {
                 fromBranch = 'develop';
               } else if (branchNames.includes('dev')) {
@@ -83,7 +84,6 @@ jobs:
               } else if (branchNames.includes('master')) {
                 fromBranch = 'master';
               } else {
-                // Get default branch
                 const { data: repo } = await github.rest.repos.get({
                   owner: context.repo.owner,
                   repo: context.repo.repo
@@ -98,175 +98,385 @@ jobs:
             
             // Extract type from labels
             const typeLabel = issue.labels.find(l => l.name.startsWith('type:'));
-            const priorityLabel = issue.labels.find(l => l.name.startsWith('priority:'));
+            const type = typeLabel ? typeLabel.name.split(':')[1] : 'feature';
             
-            const type = typeLabel ? typeLabel.name.replace('type: ', '') : 'feature';
-            const priority = priorityLabel ? priorityLabel.name.replace('priority: ', '') : 'medium';
+            // Create branch name
+            const sanitizedTitle = issue.title
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-|-$/g, '')
+              .substring(0, 50);
             
-            // Determine branch prefix
-            const prefixMap = {
-              'bug': 'fix',
-              'feature': 'feature',
-              'enhancement': 'feature',
-              'docs': 'docs',
-              'refactor': 'chore'
-            };
-            const prefix = prefixMap[type] || 'feature';
+            const branchName = `${type}/${issueNumber}-${sanitizedTitle}`;
             
-            // Check if title contains non-ASCII characters
-            const hasNonAscii = /[^\x00-\x7F]/.test(issue.title);
-            let slug = 'issue';
-            
-            if (!hasNonAscii) {
-              // Convert title to slug
-              slug = issue.title
-                .toLowerCase()
-                .replace(/[^a-z0-9]+/g, '-')
-                .replace(/^-+|-+$/g, '')
-                .substring(0, 30);
-            }
-            
-            const branchName = `${prefix}/#${issueNumber}-${slug}`;
-            
+            core.setOutput('title', issue.title);
+            core.setOutput('number', issueNumber);
+            core.setOutput('type', type);
             core.setOutput('branch_name', branchName);
-            core.setOutput('issue_title', issue.title);
-            core.setOutput('issue_type', type);
-            core.setOutput('issue_priority', priority);
-            
-            console.log(`📋 Title: ${issue.title}`);
-            console.log(`🏷️ Type: ${type}`);
-            console.log(`🎯 Priority: ${priority}`);
-            console.log(`🌿 Branch: ${branchName}`);
-            
-            return issue;
+            core.setOutput('assignee', issue.assignee?.login || '');
             
       - name: Create and push branch
         id: branch
         run: |
+          BRANCH_NAME="${{ steps.issue.outputs.branch_name }}"
           FROM_BRANCH="${{ steps.issue.outputs.from_branch }}"
-          NEW_BRANCH="${{ steps.issue.outputs.branch_name }}"
+          
+          # Fetch all branches
+          git fetch origin
+          
+          # Check if branch already exists
+          if git ls-remote --heads origin "$BRANCH_NAME" | grep -q .; then
+            echo "❌ Branch $BRANCH_NAME already exists"
+            echo "exists=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Create new branch from base branch
+          git checkout -B "$BRANCH_NAME" "origin/$FROM_BRANCH"
+          
+          # Push the new branch
+          git push -u origin "$BRANCH_NAME"
+          
+          echo "exists=false" >> $GITHUB_OUTPUT
+          echo "✅ Created and pushed branch: $BRANCH_NAME"
+          
+      - name: Update issue and comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = ${{ steps.issue.outputs.number }};
+            const branchName = '${{ steps.issue.outputs.branch_name }}';
+            const fromBranch = '${{ steps.issue.outputs.from_branch }}';
+            const branchExists = '${{ steps.branch.outputs.exists }}' === 'true';
+            const assignee = '${{ steps.issue.outputs.assignee }}';
+            const currentUser = context.payload.comment.user.login;
+            
+            // Update issue state and assignee
+            if (!branchExists) {
+              const updates = {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: parseInt(issueNumber),
+                labels: ['in-progress']
+              };
+              
+              // Assign to command user if no assignee
+              if (!assignee) {
+                updates.assignees = [currentUser];
+              }
+              
+              await github.rest.issues.update(updates);
+            }
+            
+            // Post comment with instructions
+            const message = branchExists 
+              ? `⚠️ **Branch already exists**\n\nThe branch \`${branchName}\` already exists. You can continue working on it.`
+              : `🚀 **Development Started!**
+              
+              **Branch**: \`${branchName}\`
+              **Base**: \`${fromBranch}\`
+              **Assigned to**: @${assignee || currentUser}
+              
+              ### Next Steps:
+              \`\`\`bash
+              # Pull the latest changes
+              git fetch origin
+              git checkout ${branchName}
+              
+              # Start developing...
+              # When ready, create a PR to ${fromBranch}
+              \`\`\`
+              
+              ### Workflow:
+              1. Develop your feature
+              2. Commit changes with conventional commits (feat:, fix:, etc.)
+              3. Create PR to \`${fromBranch}\`
+              4. Changeset will be auto-generated on PR
+              5. After review and merge, changesets accumulate in \`${fromBranch}\`
+              `;
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: message
+            });
+
+  # /start release - 开始发布流程
+  start-release:
+    if: |
+      github.event.issue.pull_request == null &&
+      startsWith(github.event.comment.body, '/start release')
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      
+    steps:
+      - name: Parse command
+        id: parse
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const command = context.payload.comment.body.trim();
+            // Parse: /start release [version]
+            const match = command.match(/^\/start release(?:\s+([\d.]+(?:-\w+)?))?$/);
+            
+            if (!match) {
+              core.setFailed('Invalid command format');
+              return;
+            }
+            
+            const version = match[1];
+            core.setOutput('version', version || '');
+            console.log(`📦 Version: ${version || 'auto-detect'}`);
+            
+      - name: Checkout develop
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Install dependencies
+        run: |
+          if [ -f "pnpm-lock.yaml" ]; then
+            npm install -g pnpm
+            pnpm install
+          elif [ -f "yarn.lock" ]; then
+            npm install -g yarn
+            yarn install
+          else
+            npm install
+          fi
+          
+      - name: Check changesets
+        id: check
+        run: |
+          # Count available changesets
+          CHANGESET_COUNT=$(ls -1 .changeset/*.md 2>/dev/null | grep -v README.md | wc -l)
+          echo "changeset_count=$CHANGESET_COUNT" >> $GITHUB_OUTPUT
+          
+          if [ "$CHANGESET_COUNT" -eq 0 ]; then
+            echo "❌ No changesets found in develop branch"
+            echo "has_changesets=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "has_changesets=true" >> $GITHUB_OUTPUT
+          echo "📦 Found $CHANGESET_COUNT changesets to consume"
+          
+          # List changesets for reference
+          echo "Changesets to be consumed:"
+          ls -1 .changeset/*.md | grep -v README.md
+          
+      - name: Determine version
+        if: steps.check.outputs.has_changesets == 'true'
+        id: version
+        run: |
+          if [ -n "${{ steps.parse.outputs.version }}" ]; then
+            VERSION="${{ steps.parse.outputs.version }}"
+          else
+            # Get current version from package.json
+            CURRENT_VERSION=$(node -p "require('./package.json').version")
+            
+            # Run changeset version in dry-run mode to see what version it would create
+            npx changeset status --output=changeset-status.json || true
+            
+            if [ -f "changeset-status.json" ]; then
+              # Parse the suggested version
+              VERSION=$(node -p "
+                const status = require('./changeset-status.json');
+                const releases = status.releases || [];
+                const pkg = releases[0];
+                pkg ? pkg.newVersion : '${CURRENT_VERSION}'
+              " 2>/dev/null || echo "$CURRENT_VERSION")
+            else
+              VERSION="$CURRENT_VERSION"
+            fi
+          fi
+          
+          # Ensure it's a prerelease version for release branch
+          if ! echo "$VERSION" | grep -qE '-(alpha|beta|rc|next)'; then
+            VERSION="${VERSION}-beta.0"
+          fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📌 Release version: $VERSION"
+          
+      - name: Create release branch
+        if: steps.check.outputs.has_changesets == 'true'
+        id: branch
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          # Remove prerelease suffix for branch name (1.2.0-beta.0 -> 1.2.0)
+          BASE_VERSION=$(echo "$VERSION" | sed 's/-.*$//')
+          BRANCH_NAME="release/${BASE_VERSION}"
+          
+          # Check if branch already exists
+          if git ls-remote --heads origin "$BRANCH_NAME" | grep -q .; then
+            echo "❌ Release branch $BRANCH_NAME already exists"
+            echo "exists=true" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          # Create and checkout release branch
+          git checkout -b "$BRANCH_NAME"
+          
+          echo "branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "exists=false" >> $GITHUB_OUTPUT
+          echo "✅ Created branch: $BRANCH_NAME"
+          
+      - name: Consume changesets
+        if: steps.check.outputs.has_changesets == 'true' && steps.branch.outputs.exists != 'true'
+        id: consume
+        run: |
+          echo "🔄 Consuming changesets..."
           
           # Configure git
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Fetch latest
-          git fetch origin
+          # Run changeset version to consume changesets
+          npx changeset version
           
-          # Check if from branch exists
-          if ! git show-ref --verify --quiet "refs/remotes/origin/${FROM_BRANCH}"; then
-            echo "❌ Base branch '${FROM_BRANCH}' does not exist"
-            exit 1
-          fi
+          # Get the new version
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           
-          # Check if new branch already exists
-          if git show-ref --verify --quiet "refs/remotes/origin/${NEW_BRANCH}"; then
-            echo "⚠️ Branch '${NEW_BRANCH}' already exists"
-            echo "branch_exists=true" >> $GITHUB_OUTPUT
-          else
-            # Create new branch from base
-            git checkout -b "${NEW_BRANCH}" "origin/${FROM_BRANCH}"
+          # Commit version bump
+          git add .
+          git commit -m "chore: release version $NEW_VERSION
+
+          Consumed ${{ steps.check.outputs.changeset_count }} changesets from develop branch" || echo "No changes to commit"
+          
+      - name: Push release branch
+        if: steps.check.outputs.has_changesets == 'true' && steps.branch.outputs.exists != 'true'
+        run: |
+          git push -u origin "${{ steps.branch.outputs.branch }}"
+          
+      - name: Clean develop branch
+        if: steps.check.outputs.has_changesets == 'true' && steps.branch.outputs.exists != 'true'
+        run: |
+          # Switch back to develop
+          git checkout develop
+          
+          # Remove consumed changesets
+          rm -f .changeset/*.md
+          echo "# Changesets consumed by ${{ steps.branch.outputs.branch }}" > .changeset/.consumed
+          
+          # Commit the cleanup
+          git add .changeset/
+          git commit -m "chore: clear changesets consumed by ${{ steps.branch.outputs.branch }}" || echo "No changesets to clear"
+          git push origin develop
+          
+      - name: Create PR
+        if: steps.check.outputs.has_changesets == 'true' && steps.branch.outputs.exists != 'true'
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="${{ steps.branch.outputs.branch }}"
+          VERSION="${{ steps.consume.outputs.new_version }}"
+          
+          # Create PR from release to main
+          PR_URL=$(gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "🚀 Release $VERSION" \
+            --body "## Release $VERSION
             
-            # Push the new branch
-            git push -u origin "${NEW_BRANCH}"
+            ### Changesets Consumed
+            - **Count**: ${{ steps.check.outputs.changeset_count }} changesets
+            - **Source**: develop branch
+            - **Version**: $VERSION
             
-            echo "✅ Branch created and pushed"
-            echo "branch_exists=false" >> $GITHUB_OUTPUT
-          fi
+            ### Release Checklist
+            - [ ] Run tests: \`/test\`
+            - [ ] Create beta release: \`/release beta\`
+            - [ ] Publish beta: \`/publish npm --tag next\`
+            - [ ] Test beta version
+            - [ ] Create RC if needed: \`/release rc\`
+            - [ ] Final review
+            - [ ] Approve and merge PR
+            - [ ] Create final release: \`/release\`
+            - [ ] Publish to npm: \`/publish\`
+            
+            ### Notes
+            This release branch was created from develop with accumulated changesets.
+            All changesets have been consumed and cleared from develop.
+            ")
+            
+          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
           
-          echo "branch_name=${NEW_BRANCH}" >> $GITHUB_OUTPUT
-          
-      - name: Update issue
+      - name: Comment result
         uses: actions/github-script@v7
         with:
           script: |
-            const issueNumber = ${{ steps.parse.outputs.issue_number }};
-            const branchName = '${{ steps.issue.outputs.branch_name }}';
-            const fromBranch = '${{ steps.issue.outputs.from_branch }}';
-            const branchExists = '${{ steps.branch.outputs.branch_exists }}' === 'true';
+            const hasChangesets = '${{ steps.check.outputs.has_changesets }}' === 'true';
+            const branchExists = '${{ steps.branch.outputs.exists }}' === 'true';
             
-            // Assign to comment author if not assigned
-            const { data: issue } = await github.rest.issues.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: parseInt(issueNumber)
-            });
-            
-            if (!issue.assignees || issue.assignees.length === 0) {
-              await github.rest.issues.addAssignees({
+            if (!hasChangesets) {
+              await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: parseInt(issueNumber),
-                assignees: [context.payload.comment.user.login]
+                issue_number: context.issue.number,
+                body: `❌ **No changesets to release**
+                
+                There are no changesets in the develop branch to consume.
+                Please ensure features have been merged with changesets before starting a release.`
               });
+              return;
             }
-            
-            // Check if we're commenting on the same issue or a different one
-            const isCurrentIssue = parseInt(issueNumber) === context.issue.number;
-            
-            // Comment on target issue
-            let message = `### 🚀 Development Started\n\n`;
             
             if (branchExists) {
-              message += `⚠️ **Branch already exists**: \`${branchName}\`\n\n`;
-              message += `You can switch to it with:\n`;
-            } else {
-              message += `✅ **Branch created**: \`${branchName}\`\n`;
-              message += `📌 **Base branch**: \`${fromBranch}\`\n\n`;
-              message += `### Next steps:\n`;
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `❌ **Release branch already exists**
+                
+                The release branch already exists. Please complete the current release before starting a new one.`
+              });
+              return;
             }
             
-            message += `\`\`\`bash\n`;
-            message += `git fetch origin\n`;
-            message += `git checkout ${branchName}\n`;
-            message += `\`\`\`\n\n`;
+            const branch = '${{ steps.branch.outputs.branch }}';
+            const version = '${{ steps.consume.outputs.new_version }}';
+            const prUrl = '${{ steps.pr.outputs.pr_url }}';
+            const changesetCount = '${{ steps.check.outputs.changeset_count }}';
             
-            if (!branchExists) {
-              message += `### When ready to submit:\n`;
-              message += `1. Commit your changes\n`;
-              message += `2. Push to the branch\n`;
-              message += `3. Create a Pull Request to \`${fromBranch}\`\n`;
-              message += `4. Link this issue in the PR description using \`Closes #${issueNumber}\`\n`;
-            }
-            
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: parseInt(issueNumber),
-              body: message
-            });
-            
-            // Store whether we should skip the summary
-            core.setOutput('skip_summary', isCurrentIssue ? 'true' : 'false');
-            
-      - name: Post summary
-        if: always() && steps.issue.outputs.skip_summary != 'true'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const issueNumber = '${{ steps.parse.outputs.issue_number }}';
-            const success = '${{ job.status }}' === 'success';
-            
-            let response;
-            if (success) {
-              const branchName = '${{ steps.issue.outputs.branch_name }}';
-              const fromBranch = '${{ steps.issue.outputs.from_branch }}';
-              const branchExists = '${{ steps.branch.outputs.branch_exists }}' === 'true';
-              
-              if (branchExists) {
-                response = `⚠️ Branch \`${branchName}\` already exists. See Issue #${issueNumber} for details.`;
-              } else {
-                response = `✅ Successfully started work on Issue #${issueNumber}\n` +
-                          `🌿 Branch: \`${branchName}\` (from \`${fromBranch}\`)`;
-              }
-            } else {
-              response = `❌ Failed to start work on Issue #${issueNumber}. Check the [workflow logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for details.`;
-            }
-            
-            // Reply to the original comment
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: response
+              body: `### 🎉 Release Started!
+              
+              **Branch**: \`${branch}\`
+              **Version**: \`${version}\`
+              **Changesets**: ${changesetCount} consumed from develop
+              **PR**: ${prUrl}
+              
+              ### Next Steps:
+              1. Switch to release branch: \`git checkout ${branch}\`
+              2. Run tests: \`/test\`
+              3. Create beta release: \`/release beta\`
+              4. Publish beta: \`/publish npm --tag next\`
+              5. Test the beta version
+              6. When ready, merge PR to main
+              7. After merge, run \`/release\` on main
+              8. Finally, \`/publish\` to npm
+              
+              ### Important:
+              - Changesets have been consumed and cleared from develop
+              - New features can continue to be developed on develop
+              - This release branch is independent and won't affect ongoing development
+              `
             });

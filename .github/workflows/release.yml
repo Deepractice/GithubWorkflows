@@ -73,6 +73,7 @@ jobs:
         with:
           script: |
             let branch;
+            let sourceBranch;
             
             // Check if this is a PR comment
             if (context.payload.issue.pull_request) {
@@ -82,28 +83,97 @@ jobs:
                 pull_number: context.issue.number
               });
               
-              branch = pr.data.base.ref;
+              branch = pr.data.base.ref;  // Target branch (e.g., main)
+              sourceBranch = pr.data.head.ref;  // Source branch (e.g., release/1.2.0)
               core.setOutput('is_pr', 'true');
               core.setOutput('pr_number', context.issue.number);
+              core.setOutput('source_branch', sourceBranch);
             } else {
               // Issue comment - use default branch
               branch = context.payload.repository.default_branch;
+              sourceBranch = branch;
               core.setOutput('is_pr', 'false');
+              core.setOutput('source_branch', branch);
             }
             
             core.setOutput('branch', branch);
-            console.log(`Will release from branch: ${branch}`);
+            console.log(`Target branch: ${branch}`);
+            console.log(`Source branch: ${sourceBranch}`);
+      
+      - name: Check branch restrictions
+        if: steps.permissions.outputs.allowed == 'true'
+        id: branch_check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const targetBranch = '${{ steps.branch.outputs.branch }}';
+            const sourceBranch = '${{ steps.branch.outputs.source_branch }}';
+            const isPR = '${{ steps.branch.outputs.is_pr }}' === 'true';
+            
+            // Check if trying to release from develop or dev
+            if (!isPR && (targetBranch === 'develop' || targetBranch === 'dev')) {
+              core.setOutput('allowed', false);
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `❌ **Cannot release from ${targetBranch} branch**
+                
+                Releases should not be done directly from develop/dev branches.
+                
+                ### Correct workflow:
+                1. Run \`/start release\` to create a release branch from develop
+                2. The release branch will consume changesets and create a PR to main
+                3. Run \`/release beta\` in the release branch PR
+                4. After testing, merge to main and run \`/release\` for final version
+                
+                ### For development versions:
+                If you want to publish a development version from ${targetBranch}:
+                - Use \`/publish npm --tag dev\` instead`
+              });
+              
+              await github.rest.reactions.createForIssueComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: context.payload.comment.id,
+                content: 'confused'
+              });
+              return;
+            }
+            
+            // For PRs, check if source is a release branch and target is main
+            if (isPR) {
+              const isReleaseToMain = sourceBranch.startsWith('release/') && targetBranch === 'main';
+              const isHotfixToMain = sourceBranch.startsWith('hotfix/') && targetBranch === 'main';
+              
+              if (!isReleaseToMain && !isHotfixToMain) {
+                // Warn but allow - might be a special case
+                console.log(`⚠️ Warning: Unusual release pattern - ${sourceBranch} → ${targetBranch}`);
+              }
+            }
+            
+            // Check if on main branch without PR context (for final releases)
+            if (!isPR && targetBranch === 'main') {
+              console.log('✅ Releasing from main branch (final release)');
+            }
+            
+            // Check if on release branch
+            if (!isPR && sourceBranch.startsWith('release/')) {
+              console.log('✅ Releasing from release branch (beta/rc)');
+            }
+            
+            core.setOutput('allowed', true);
       
       - name: Checkout branch
-        if: steps.permissions.outputs.allowed == 'true'
+        if: steps.permissions.outputs.allowed == 'true' && steps.branch_check.outputs.allowed == 'true'
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          ref: ${{ steps.branch.outputs.branch }}
+          ref: ${{ steps.branch.outputs.source_branch }}
           fetch-depth: 0
       
       - name: Parse command
-        if: steps.permissions.outputs.allowed == 'true'
+        if: steps.permissions.outputs.allowed == 'true' && steps.branch_check.outputs.allowed == 'true'
         id: parse
         shell: bash
         run: |
