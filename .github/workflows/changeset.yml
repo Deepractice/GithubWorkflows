@@ -103,16 +103,31 @@ jobs:
           COMMAND="${{ github.event.comment.body }}"
           echo "Raw command: $COMMAND"
           
-          # Parse: /changeset [patch|minor|major] [optional message]
-          if [[ "$COMMAND" =~ ^/changeset[[:space:]]+(patch|minor|major)([[:space:]]+(.*))?$ ]]; then
+          # Parse: /changeset [--auto|patch|minor|major] [optional message]
+          # Default to --auto if no arguments provided
+          if [[ "$COMMAND" == "/changeset" ]]; then
+            # No arguments = auto mode
+            echo "mode=auto" >> $GITHUB_OUTPUT
+            echo "valid=true" >> $GITHUB_OUTPUT
+            echo "Auto mode: will analyze commits to determine version"
+          elif [[ "$COMMAND" =~ ^/changeset[[:space:]]+--auto([[:space:]]+(.*))?$ ]]; then
+            # Explicit auto mode
+            MESSAGE="${BASH_REMATCH[2]}"
+            echo "mode=auto" >> $GITHUB_OUTPUT
+            echo "message=$MESSAGE" >> $GITHUB_OUTPUT
+            echo "valid=true" >> $GITHUB_OUTPUT
+            echo "Auto mode with message: $MESSAGE"
+          elif [[ "$COMMAND" =~ ^/changeset[[:space:]]+(patch|minor|major)([[:space:]]+(.*))?$ ]]; then
+            # Manual mode with explicit version
             TYPE="${BASH_REMATCH[1]}"
             MESSAGE="${BASH_REMATCH[3]}"
             
+            echo "mode=manual" >> $GITHUB_OUTPUT
             echo "type=$TYPE" >> $GITHUB_OUTPUT
             echo "message=$MESSAGE" >> $GITHUB_OUTPUT
             echo "valid=true" >> $GITHUB_OUTPUT
             
-            echo "Parsed: type=$TYPE, message=$MESSAGE"
+            echo "Manual mode: type=$TYPE, message=$MESSAGE"
           else
             echo "valid=false" >> $GITHUB_OUTPUT
             echo "Invalid command format"
@@ -147,6 +162,72 @@ jobs:
             echo "No existing changeset for PR #${PR_NUMBER}"
           fi
       
+      - name: Analyze Version Type (Auto Mode)
+        if: steps.permissions.outputs.allowed == 'true' && steps.parse.outputs.mode == 'auto'
+        id: analyze
+        shell: bash
+        run: |
+          echo "🔍 Analyzing commits to determine version type..."
+          
+          # Get base branch
+          BASE_BRANCH=$(gh pr view ${{ steps.pr.outputs.number }} --json baseRefName -q .baseRefName)
+          
+          # Analyze commits between base and head
+          VERSION_TYPE="patch"
+          CHANGES=""
+          
+          # Get all commits in this PR
+          COMMITS=$(git log origin/${BASE_BRANCH}..HEAD --oneline)
+          
+          while IFS= read -r commit; do
+            echo "Analyzing: $commit"
+            
+            # Check for breaking changes
+            if echo "$commit" | grep -qE "(BREAKING CHANGE:|!:)"; then
+              VERSION_TYPE="major"
+              CHANGES="${CHANGES}\n💥 Breaking: ${commit}"
+            # Check for features
+            elif echo "$commit" | grep -qE "^[a-f0-9]+ feat(\(.+?\))?:"; then
+              if [ "$VERSION_TYPE" != "major" ]; then
+                VERSION_TYPE="minor"
+              fi
+              CHANGES="${CHANGES}\n✨ Feature: ${commit}"
+            # Check for fixes
+            elif echo "$commit" | grep -qE "^[a-f0-9]+ fix(\(.+?\))?:"; then
+              CHANGES="${CHANGES}\n🐛 Fix: ${commit}"
+            # Check for performance improvements
+            elif echo "$commit" | grep -qE "^[a-f0-9]+ perf(\(.+?\))?:"; then
+              if [ "$VERSION_TYPE" == "patch" ]; then
+                VERSION_TYPE="minor"
+              fi
+              CHANGES="${CHANGES}\n⚡ Performance: ${commit}"
+            fi
+          done <<< "$COMMITS"
+          
+          # If no conventional commits found, analyze files
+          if [ "$VERSION_TYPE" == "patch" ]; then
+            FILES_CHANGED=$(git diff origin/${BASE_BRANCH}..HEAD --name-only)
+            
+            # Check if only docs/tests changed
+            ONLY_DOCS_TESTS=true
+            while IFS= read -r file; do
+              if [[ ! "$file" =~ (README|docs/|test/|\.md$|\.test\.|\.spec\.) ]]; then
+                ONLY_DOCS_TESTS=false
+                break
+              fi
+            done <<< "$FILES_CHANGED"
+            
+            if [ "$ONLY_DOCS_TESTS" == "true" ]; then
+              echo "Only documentation or tests changed, using patch"
+            fi
+          fi
+          
+          echo "type=$VERSION_TYPE" >> $GITHUB_OUTPUT
+          echo "changes=$CHANGES" >> $GITHUB_OUTPUT
+          echo "✅ Determined version type: $VERSION_TYPE"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
       - name: Detect Project Type
         if: steps.permissions.outputs.allowed == 'true' && steps.parse.outputs.valid == 'true'
         id: detect
@@ -165,7 +246,15 @@ jobs:
           steps.check.outputs.exists != 'true'
         shell: bash
         run: |
-          TYPE="${{ steps.parse.outputs.type }}"
+          # Determine version type based on mode
+          if [ "${{ steps.parse.outputs.mode }}" == "auto" ]; then
+            TYPE="${{ steps.analyze.outputs.type }}"
+            echo "Using auto-detected type: $TYPE"
+          else
+            TYPE="${{ steps.parse.outputs.type }}"
+            echo "Using manually specified type: $TYPE"
+          fi
+          
           MESSAGE="${{ steps.parse.outputs.message }}"
           PR_TITLE="${{ steps.pr.outputs.title }}"
           PR_NUMBER="${{ steps.pr.outputs.number }}"
@@ -180,6 +269,7 @@ jobs:
           export CHANGESET_MESSAGE="$CHANGESET_MESSAGE"
           export PR_NUMBER="$PR_NUMBER"
           export PR_AUTHOR="$PR_AUTHOR"
+          export AUTO_MODE="${{ steps.parse.outputs.mode }}"
           
           # Call appropriate implementation based on project type
           IMPL_SCRIPT="./commands/changeset/scripts/${PROJECT_TYPE}.sh"
@@ -219,18 +309,35 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const type = '${{ steps.parse.outputs.type }}';
+            const mode = '${{ steps.parse.outputs.mode }}';
+            const type = mode === 'auto' ? '${{ steps.analyze.outputs.type }}' : '${{ steps.parse.outputs.type }}';
             const emoji = {
               'patch': '🩹',
               'minor': '✨',
               'major': '💥'
             }[type];
             
+            let message = `${emoji} **Created ${type} changeset**\n\n`;
+            
+            if (mode === 'auto') {
+              message += `🤖 **Auto-detected version type based on commit analysis**\n\n`;
+              const changes = `${{ steps.analyze.outputs.changes }}`;
+              if (changes) {
+                message += `**Detected changes:**\n${changes}\n\n`;
+              }
+            }
+            
+            message += `This PR will trigger a ${type} version bump when merged.`;
+            
+            if (mode === 'auto') {
+              message += `\n\n💡 _Tip: You can override this by running \`/changeset [patch|minor|major]\` manually._`;
+            }
+            
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: `${emoji} **Created ${type} changeset**\n\nThis PR will trigger a ${type} version bump when merged.`
+              body: message
             });
             
             // Add rocket reaction for success
@@ -250,7 +357,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: `❌ **Invalid command format**\n\nUsage: \`/changeset [patch|minor|major] [optional message]\`\n\nExamples:\n- \`/changeset patch\`\n- \`/changeset minor Add dark mode support\`\n- \`/changeset major Breaking API changes\``
+              body: `❌ **Invalid command format**\n\nUsage: \`/changeset [--auto|patch|minor|major] [optional message]\`\n\nExamples:\n- \`/changeset\` - Auto-detect version from commits (default)\n- \`/changeset --auto\` - Explicitly use auto mode\n- \`/changeset patch\` - Manual patch version\n- \`/changeset minor Add dark mode support\` - Manual minor with message\n- \`/changeset major Breaking API changes\` - Manual major with message`
             });
             
             // Add confused reaction for error
