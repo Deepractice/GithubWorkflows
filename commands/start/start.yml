@@ -221,8 +221,8 @@ jobs:
         with:
           script: |
             const command = context.payload.comment.body.trim();
-            // Parse: /start release [version]
-            const match = command.match(/^\/start release(?:\s+([\d.]+(?:-\w+)?))?$/);
+            // Parse: /start release [version] [--preview]
+            const match = command.match(/^\/start release(?:\s+([\d.]+(?:-\w+)?))?(?:\s+(--preview))?$/);
             
             if (!match) {
               core.setFailed('Invalid command format');
@@ -230,8 +230,11 @@ jobs:
             }
             
             const version = match[1];
+            const isPreview = match[2] === '--preview';
             core.setOutput('version', version || '');
+            core.setOutput('preview', isPreview);
             console.log(`📦 Version: ${version || 'auto-detect'}`);
+            console.log(`👁️ Preview mode: ${isPreview}`);
             
       - name: Checkout develop
         uses: actions/checkout@v4
@@ -312,7 +315,7 @@ jobs:
           echo "📌 Release version: $VERSION"
           
       - name: Create release branch
-        if: steps.check.outputs.has_changesets == 'true'
+        if: steps.check.outputs.has_changesets == 'true' && steps.parse.outputs.preview != 'true'
         id: branch
         run: |
           VERSION="${{ steps.version.outputs.version }}"
@@ -334,8 +337,47 @@ jobs:
           echo "exists=false" >> $GITHUB_OUTPUT
           echo "✅ Created branch: $BRANCH_NAME"
           
+      - name: Preview changesets (dry run)
+        if: steps.check.outputs.has_changesets == 'true' && steps.parse.outputs.preview == 'true'
+        id: preview
+        run: |
+          echo "🔍 Analyzing changesets (preview mode)..."
+          
+          # Count changesets by type
+          MAJOR_COUNT=0
+          MINOR_COUNT=0
+          PATCH_COUNT=0
+          
+          for file in .changeset/*.md; do
+            [ -f "$file" ] || continue
+            [ "$file" = ".changeset/README.md" ] && continue
+            
+            # Parse the changeset file to determine version type
+            if grep -q "major" "$file"; then
+              MAJOR_COUNT=$((MAJOR_COUNT + 1))
+            elif grep -q "minor" "$file"; then
+              MINOR_COUNT=$((MINOR_COUNT + 1))
+            elif grep -q "patch" "$file"; then
+              PATCH_COUNT=$((PATCH_COUNT + 1))
+            fi
+          done
+          
+          # Determine next version type
+          if [ $MAJOR_COUNT -gt 0 ]; then
+            VERSION_TYPE="major"
+          elif [ $MINOR_COUNT -gt 0 ]; then
+            VERSION_TYPE="minor"
+          else
+            VERSION_TYPE="patch"
+          fi
+          
+          echo "major_count=$MAJOR_COUNT" >> $GITHUB_OUTPUT
+          echo "minor_count=$MINOR_COUNT" >> $GITHUB_OUTPUT
+          echo "patch_count=$PATCH_COUNT" >> $GITHUB_OUTPUT
+          echo "version_type=$VERSION_TYPE" >> $GITHUB_OUTPUT
+          
       - name: Consume changesets
-        if: steps.check.outputs.has_changesets == 'true' && steps.branch.outputs.exists != 'true'
+        if: steps.check.outputs.has_changesets == 'true' && steps.branch.outputs.exists != 'true' && steps.parse.outputs.preview != 'true'
         id: consume
         run: |
           echo "🔄 Consuming changesets..."
@@ -422,6 +464,7 @@ jobs:
           script: |
             const hasChangesets = '${{ steps.check.outputs.has_changesets }}' === 'true';
             const branchExists = '${{ steps.branch.outputs.exists }}' === 'true';
+            const isPreview = '${{ steps.parse.outputs.preview }}' === 'true';
             
             if (!hasChangesets) {
               await github.rest.issues.createComment({
@@ -432,6 +475,47 @@ jobs:
                 
                 There are no changesets in the develop branch to consume.
                 Please ensure features have been merged with changesets before starting a release.`
+              });
+              return;
+            }
+            
+            // Preview mode response
+            if (isPreview) {
+              const version = '${{ steps.version.outputs.version }}';
+              const changesetCount = '${{ steps.check.outputs.changeset_count }}';
+              const majorCount = '${{ steps.preview.outputs.major_count }}' || '0';
+              const minorCount = '${{ steps.preview.outputs.minor_count }}' || '0';
+              const patchCount = '${{ steps.preview.outputs.patch_count }}' || '0';
+              const versionType = '${{ steps.preview.outputs.version_type }}';
+              
+              let emoji = '🩹';
+              if (versionType === 'major') emoji = '💥';
+              else if (versionType === 'minor') emoji = '✨';
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `### 👁️ Release Preview
+                
+                **Next version**: \`${version}\` (${emoji} ${versionType})
+                **Total changesets**: ${changesetCount}
+                
+                ### Breakdown:
+                - 💥 Major: ${majorCount}
+                - ✨ Minor: ${minorCount}
+                - 🩹 Patch: ${patchCount}
+                
+                ### Ready to release?
+                Run \`/start release\` to:
+                1. Create release branch \`release/${version.split('-')[0]}\`
+                2. Consume all changesets
+                3. Create PR to main
+                4. Begin release process
+                
+                ### Not ready yet?
+                Continue developing on \`develop\` branch.
+                New changesets will be included in the next release.`
               });
               return;
             }
