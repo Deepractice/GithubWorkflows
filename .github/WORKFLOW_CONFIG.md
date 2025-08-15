@@ -7,12 +7,11 @@
 - **解决方案**: node-opensource
 - **描述**: Node.js 开源项目的 GitHub 工作流
 - **分支策略**: dual-flow
-- **生成时间**: 2025-08-15T05:06:34.678Z
+- **生成时间**: 2025-08-15T05:16:29.608Z
 
 ## 启用的命令
 
 - `/start`
-- `/pr`
 - `/test`
 - `/changeset`
 - `/release`
