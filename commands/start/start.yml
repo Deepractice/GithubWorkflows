@@ -678,28 +678,6 @@ jobs:
           echo "📌 Release version: $VERSION"
           echo "🌿 Branch version: $BASE_VERSION"
           
-      - name: Create release branch
-        if: steps.check.outputs.has_changesets == 'true' && steps.parse.outputs.preview != 'true'
-        id: branch
-        run: |
-          # Use the base version for branch name (already calculated in previous step)
-          BASE_VERSION="${{ steps.version.outputs.base_version }}"
-          BRANCH_NAME="release/${BASE_VERSION}"
-          
-          # Check if branch already exists
-          if git ls-remote --heads origin "$BRANCH_NAME" | grep -q .; then
-            echo "❌ Release branch $BRANCH_NAME already exists"
-            echo "exists=true" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-          
-          # Create and checkout release branch
-          git checkout -b "$BRANCH_NAME"
-          
-          echo "branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
-          echo "exists=false" >> $GITHUB_OUTPUT
-          echo "✅ Created branch: $BRANCH_NAME"
-          
       - name: Preview changesets (dry run)
         if: steps.check.outputs.has_changesets == 'true' && steps.parse.outputs.preview == 'true'
         id: preview
@@ -740,28 +718,61 @@ jobs:
           echo "patch_count=$PATCH_COUNT" >> $GITHUB_OUTPUT
           echo "version_type=$VERSION_TYPE" >> $GITHUB_OUTPUT
           
-      - name: Consume changesets
-        if: steps.check.outputs.has_changesets == 'true' && steps.branch.outputs.exists != 'true' && steps.parse.outputs.preview != 'true'
+      - name: Consume changesets on develop
+        if: steps.check.outputs.has_changesets == 'true' && steps.parse.outputs.preview != 'true'
         id: consume
         run: |
-          echo "🔄 Consuming changesets..."
+          echo "🔄 Consuming changesets on develop branch..."
+          
+          # Ensure we're on develop branch
+          git checkout develop
           
           # Configure git
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
           # Run changeset version to consume changesets
-          changeset version
+          npx changeset version
           
-          # Get the new version
+          # Get the new version after consuming changesets
           NEW_VERSION=$(node -p "require('./package.json').version")
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           
-          # Commit version bump
+          # Commit version bump on develop
           git add .
           git commit -m "chore: release version $NEW_VERSION
 
           Consumed ${{ steps.check.outputs.changeset_count }} changesets from develop branch" || echo "No changes to commit"
+          
+          # Push the updated develop branch
+          git push origin develop
+          
+          echo "✅ Consumed changesets and updated version to $NEW_VERSION on develop"
+          
+      - name: Create release branch from updated develop
+        if: steps.check.outputs.has_changesets == 'true' && steps.parse.outputs.preview != 'true'
+        id: branch
+        run: |
+          # Use the actual new version for branch name
+          NEW_VERSION="${{ steps.consume.outputs.new_version }}"
+          BASE_VERSION=$(echo "$NEW_VERSION" | sed 's/-.*$//')
+          BRANCH_NAME="release/${BASE_VERSION}"
+          
+          echo "📌 Creating release branch: $BRANCH_NAME from updated develop"
+          
+          # Check if branch already exists
+          if git ls-remote --heads origin "$BRANCH_NAME" | grep -q .; then
+            echo "❌ Release branch $BRANCH_NAME already exists"
+            echo "exists=true" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          # Create release branch from current (updated) develop
+          git checkout -b "$BRANCH_NAME"
+          
+          echo "branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "exists=false" >> $GITHUB_OUTPUT
+          echo "✅ Created branch: $BRANCH_NAME with version $NEW_VERSION"
           
       - name: Push release branch
         if: steps.check.outputs.has_changesets == 'true' && steps.branch.outputs.exists != 'true' && steps.parse.outputs.preview != 'true'
