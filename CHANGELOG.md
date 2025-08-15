@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.0
+
+### Minor Changes
+
+- dc3b3a9: feat: 完整工作流测试 - 修复后验证
+
+  Contributed by @deepracticexs via #44
+
+## 0.3.0
+
+### Minor Changes
+
+- dc3b3a9: feat: 完整工作流测试 - 修复后验证
+
+  Contributed by @deepracticexs via #44
+
 ## 0.2.0
 
 ### Minor Changes
