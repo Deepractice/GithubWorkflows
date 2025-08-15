@@ -9,15 +9,14 @@ MSG="${1:-sync: update workflows}"
 echo "🔄 同步工作流..."
 
 # 1. 在 main 分支生成并提交
-cd temp/test
 git checkout main
 git pull origin main  # 确保是最新的
-node ../../make.js node-opensource .
+node make.js node-opensource .
 
 # 手动复制四个事件文件（make.js 目前只生成两个）
-cp ../../events/pr-opened-develop/pr-opened-develop.yml .github/workflows/
-cp ../../events/pr-opened-main/pr-opened-main.yml .github/workflows/
-cp ../../events/pr-merged-main/pr-merged-main.yml .github/workflows/
+cp events/pr-opened-develop/pr-opened-develop.yml .github/workflows/
+cp events/pr-opened-main/pr-opened-main.yml .github/workflows/
+cp events/pr-merged-main/pr-merged-main.yml .github/workflows/
 
 git add -A && git commit -m "$MSG" && git push origin main
 MAIN_HASH=$(git rev-parse HEAD)
