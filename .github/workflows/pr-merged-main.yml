@@ -1,0 +1,89 @@
+name: PR Merged to Main Event
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+      - master
+
+jobs:
+  trigger-production-release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: read
+      
+    steps:
+      - name: Check if release PR
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            
+            // Check if it's a release PR
+            const sourceBranch = pr.head.ref;
+            const isReleaseBranch = sourceBranch.startsWith('release/') || 
+                                   sourceBranch.startsWith('hotfix/');
+            
+            if (!isReleaseBranch) {
+              console.log(`Not a release merge (${sourceBranch}), skipping production release`);
+              core.setOutput('is_release', 'false');
+              return;
+            }
+            
+            // Extract version from branch name (release/1.2.3 -> 1.2.3)
+            const versionMatch = sourceBranch.match(/\/([\d.]+)/);
+            const version = versionMatch ? versionMatch[1] : 'unknown';
+            
+            core.setOutput('is_release', 'true');
+            core.setOutput('version', version);
+            core.setOutput('source_branch', sourceBranch);
+            console.log(`Release PR merged: ${sourceBranch} -> main`);
+            
+      - name: Post merge notification
+        if: steps.check.outputs.is_release == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = context.payload.pull_request;
+            const version = '${{ steps.check.outputs.version }}';
+            const sourceBranch = '${{ steps.check.outputs.source_branch }}';
+            
+            const message = `## 🎉 Release Merged to Production!
+            
+            **Version ${version}** has been successfully merged to \`main\`.
+            
+            Let me create the official GitHub Release...`;
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              body: message
+            });
+            
+      - name: Trigger production release
+        if: steps.check.outputs.is_release == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = context.payload.pull_request;
+            
+            // Wait for notification
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Create final release (without prerelease flag)
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              body: '/release'
+            });
+            
+            console.log('✅ Triggered /release for production');
