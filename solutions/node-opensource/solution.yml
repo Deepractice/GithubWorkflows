@@ -19,8 +19,10 @@ components:
   # 事件触发器（透明的自动化）
   # 所有事件通过发送命令评论来触发对应操作，保持完全透明
   events:
-    - pr-opened           # PR 创建时 → 触发 /changeset --auto
-    - pr-merged-develop   # PR 合并到 develop → 触发 /release --preview
+    - pr-opened-develop   # PR 到 develop 时 → 触发 /changeset --auto
+    - pr-opened-main      # PR 到 main 时 → 触发 /release beta
+    - pr-merged-develop   # PR 合并到 develop → 触发 /start release --preview
+    - pr-merged-main      # PR 合并到 main → 可能触发 publish
   
   # Issue 标签
   labels:
