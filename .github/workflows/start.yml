@@ -647,38 +647,43 @@ jobs:
           else
             # Get current version from package.json
             CURRENT_VERSION=$(node -p "require('./package.json').version")
+            echo "📊 Current version: $CURRENT_VERSION"
             
-            # Run changeset version in dry-run mode to see what version it would create
-            changeset status --output=changeset-status.json || true
+            # Temporarily run changeset version to calculate next version
+            # We'll do this in a way that doesn't modify files
+            cp package.json package.json.bak
             
-            if [ -f "changeset-status.json" ]; then
-              # Parse the suggested version
-              VERSION=$(node -p "
-                const status = require('./changeset-status.json');
-                const releases = status.releases || [];
-                const pkg = releases[0];
-                pkg ? pkg.newVersion : '${CURRENT_VERSION}'
-              " 2>/dev/null || echo "$CURRENT_VERSION")
-            else
-              VERSION="$CURRENT_VERSION"
-            fi
+            # Run changeset version to get the actual next version
+            npx changeset version 2>/dev/null || true
+            
+            # Get the new version that changeset calculated
+            NEXT_VERSION=$(node -p "require('./package.json').version")
+            echo "📈 Next version calculated by changeset: $NEXT_VERSION"
+            
+            # Restore original package.json
+            mv package.json.bak package.json
+            
+            # Clean up any other files changeset might have modified
+            git checkout -- .changeset/ 2>/dev/null || true
+            
+            VERSION="$NEXT_VERSION"
           fi
           
-          # Ensure it's a prerelease version for release branch
-          if ! echo "$VERSION" | grep -qE '-(alpha|beta|rc|next)'; then
-            VERSION="${VERSION}-beta.0"
-          fi
+          # For release branches, we use the clean version (no prerelease suffix)
+          # The actual release will be beta, but branch name should be clean
+          BASE_VERSION=$(echo "$VERSION" | sed 's/-.*$//')
           
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "base_version=$BASE_VERSION" >> $GITHUB_OUTPUT
           echo "📌 Release version: $VERSION"
+          echo "🌿 Branch version: $BASE_VERSION"
           
       - name: Create release branch
         if: steps.check.outputs.has_changesets == 'true' && steps.parse.outputs.preview != 'true'
         id: branch
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          # Remove prerelease suffix for branch name (1.2.0-beta.0 -> 1.2.0)
-          BASE_VERSION=$(echo "$VERSION" | sed 's/-.*$//')
+          # Use the base version for branch name (already calculated in previous step)
+          BASE_VERSION="${{ steps.version.outputs.base_version }}"
           BRANCH_NAME="release/${BASE_VERSION}"
           
           # Check if branch already exists
