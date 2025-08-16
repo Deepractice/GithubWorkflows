@@ -4,17 +4,9 @@
 
 ### Patch Changes
 
-- b062a73: feat: 工作流修复验证测试 - 20250816-1408
+- 63e2e84: feat: 第三轮完整测试验证 - 20250816-1047
 
-  Contributed by @deepracticexs via #61
-
-## 0.1.6
-
-### Patch Changes
-
-- b062a73: feat: 工作流修复验证测试 - 20250816-1408
-
-  Contributed by @deepracticexs via #61
+  Contributed by @deepracticexs via #65
 
 ## 0.1.5
 
