@@ -198,7 +198,6 @@ jobs:
   # /start pr - 创建 Pull Request
   start-pr:
     if: |
-      github.event.issue.pull_request == null &&
       startsWith(github.event.comment.body, '/start pr')
     runs-on: ubuntu-latest
     
@@ -559,7 +558,6 @@ jobs:
   # /start release - 开始发布流程
   start-release:
     if: |
-      github.event.issue.pull_request == null &&
       startsWith(github.event.comment.body, '/start release')
     runs-on: ubuntu-latest
     
