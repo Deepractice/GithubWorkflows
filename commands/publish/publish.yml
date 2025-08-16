@@ -1,0 +1,418 @@
+name: Publish Command
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  handle-publish:
+    # 只在 issue/PR 评论中包含 /publish 命令时运行
+    if: |
+      github.event.issue &&
+      contains(github.event.comment.body, '/publish')
+    
+    runs-on: ubuntu-latest
+    
+    # 权限设置
+    permissions:
+      id-token: write     # OIDC 认证（npm trusted publishing）
+      contents: read      # 读取代码
+      packages: write     # GitHub Packages
+      issues: write       # 回复评论
+      pull-requests: write # PR 评论
+    
+    # 发布环境
+    environment:
+      name: publish
+      url: ${{ steps.publish.outputs.url }}
+    
+    steps:
+      - name: Parse command
+        id: parse
+        run: |
+          COMMENT="${{ github.event.comment.body }}"
+          echo "Raw comment: $COMMENT"
+          
+          # 提取命令行
+          COMMAND=$(echo "$COMMENT" | grep -o '/publish[^/]*' | head -1 || echo "")
+          echo "Extracted command: $COMMAND"
+          
+          # 解析子命令和选项
+          if echo "$COMMAND" | grep -q "npm"; then
+            CHANNEL="npm"
+            # 解析 npm 特定选项
+            if echo "$COMMAND" | grep -q -- "--tag"; then
+              TAG=$(echo "$COMMAND" | sed -n 's/.*--tag[[:space:]]\+\([^[:space:]]*\).*/\1/p')
+              echo "npm_tag=${TAG:-latest}" >> $GITHUB_OUTPUT
+            else
+              echo "npm_tag=latest" >> $GITHUB_OUTPUT
+            fi
+            
+            if echo "$COMMAND" | grep -q -- "--access"; then
+              ACCESS=$(echo "$COMMAND" | sed -n 's/.*--access[[:space:]]\+\([^[:space:]]*\).*/\1/p')
+              echo "npm_access=${ACCESS:-public}" >> $GITHUB_OUTPUT
+            else
+              echo "npm_access=public" >> $GITHUB_OUTPUT
+            fi
+            
+          elif echo "$COMMAND" | grep -q "docker"; then
+            CHANNEL="docker"
+            # 解析 Docker 特定选项
+            if echo "$COMMAND" | grep -q -- "--tag"; then
+              TAG=$(echo "$COMMAND" | sed -n 's/.*--tag[[:space:]]\+\([^[:space:]]*\).*/\1/p')
+              echo "docker_tag=${TAG:-latest}" >> $GITHUB_OUTPUT
+            else
+              echo "docker_tag=latest" >> $GITHUB_OUTPUT
+            fi
+            
+            if echo "$COMMAND" | grep -q -- "--registry"; then
+              REGISTRY=$(echo "$COMMAND" | sed -n 's/.*--registry[[:space:]]\+\([^[:space:]]*\).*/\1/p')
+              echo "docker_registry=${REGISTRY:-docker.io}" >> $GITHUB_OUTPUT
+            else
+              echo "docker_registry=docker.io" >> $GITHUB_OUTPUT
+            fi
+            
+            if echo "$COMMAND" | grep -q -- "--platform"; then
+              PLATFORM=$(echo "$COMMAND" | sed -n 's/.*--platform[[:space:]]\+\([^[:space:]]*\).*/\1/p')
+              echo "docker_platform=${PLATFORM:-linux/amd64}" >> $GITHUB_OUTPUT
+            else
+              echo "docker_platform=linux/amd64" >> $GITHUB_OUTPUT
+            fi
+            
+          else
+            CHANNEL="auto"
+          fi
+          
+          echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
+          
+          # 检查 dry-run 模式
+          if echo "$COMMAND" | grep -q -- "--dry-run"; then
+            echo "dry_run=true" >> $GITHUB_OUTPUT
+          else
+            echo "dry_run=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Check permissions
+        id: permissions
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const username = context.payload.comment.user.login;
+            
+            // Allow github-actions bot for automated workflows
+            if (username === 'github-actions[bot]' || username === 'github-actions') {
+              console.log('Allowing github-actions bot');
+              return true;
+            }
+            
+            try {
+              // 检查用户权限
+              const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner,
+                repo,
+                username
+              });
+              
+              // 需要 write 权限才能发布
+              const allowed = ['admin', 'maintain', 'write'].includes(permission.permission);
+              console.log(`User ${username} has ${permission.permission} permission: ${allowed ? 'allowed' : 'denied'}`);
+              
+              if (!allowed) {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: context.issue.number,
+                  body: `❌ @${username} 你没有发布权限。需要 write 以上权限才能执行 /publish 命令。`
+                });
+              }
+              
+              return allowed;
+            } catch (error) {
+              console.error('Error checking permissions:', error);
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: context.issue.number,
+                body: `❌ 检查权限时出错: ${error.message}`
+              });
+              return false;
+            }
+          result-encoding: string
+      
+      - name: React to comment
+        if: steps.permissions.outputs.result == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            });
+      
+      - name: Checkout code
+        if: steps.permissions.outputs.result == 'true'
+        uses: actions/checkout@v4
+        with:
+          # 获取完整历史以检查标签
+          fetch-depth: 0
+          # 如果是 PR，checkout 到 PR 的分支
+          ref: ${{ github.event.issue.pull_request && format('refs/pull/{0}/head', github.event.issue.number) || github.ref }}
+      
+      - name: Detect latest release
+        if: steps.permissions.outputs.result == 'true'
+        id: version
+        run: |
+          # 获取最新的版本标签
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          if [ -z "$LATEST_TAG" ]; then
+            echo "❌ 未找到版本标签，请先执行 /release 命令"
+            echo "has_release=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "Latest tag: $LATEST_TAG"
+          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "has_release=true" >> $GITHUB_OUTPUT
+          
+          # 提取版本号（去掉 v 前缀）
+          VERSION="${LATEST_TAG#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Auto-detect project type
+        if: steps.permissions.outputs.result == 'true' && steps.parse.outputs.channel == 'auto'
+        id: detect
+        run: |
+          CHANNEL=""
+          
+          # 检测项目类型
+          if [ -f "package.json" ]; then
+            # 检查是否是库（有 main/module/exports 字段）
+            if grep -q '"main"\|"module"\|"exports"' package.json; then
+              CHANNEL="npm"
+              echo "检测到 Node.js 库项目"
+            elif [ -f "Dockerfile" ]; then
+              CHANNEL="docker"
+              echo "检测到 Node.js 应用项目（有 Dockerfile）"
+            else
+              CHANNEL="npm"
+              echo "检测到 Node.js 项目（默认发布到 npm）"
+            fi
+          elif [ -f "Dockerfile" ]; then
+            CHANNEL="docker"
+            echo "检测到 Docker 项目"
+          elif [ -f "setup.py" ] || [ -f "pyproject.toml" ]; then
+            echo "检测到 Python 项目（暂不支持）"
+            CHANNEL="unsupported"
+          elif [ -f "go.mod" ]; then
+            if [ -f "Dockerfile" ]; then
+              CHANNEL="docker"
+              echo "检测到 Go 应用项目（有 Dockerfile）"
+            else
+              echo "检测到 Go 项目（暂不支持）"
+              CHANNEL="unsupported"
+            fi
+          else
+            echo "无法检测项目类型"
+            CHANNEL="unknown"
+          fi
+          
+          echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
+      
+      - name: Set final channel
+        if: steps.permissions.outputs.result == 'true'
+        id: channel
+        run: |
+          # 优先使用显式指定的渠道，否则使用自动检测的结果
+          if [ "${{ steps.parse.outputs.channel }}" = "auto" ]; then
+            CHANNEL="${{ steps.detect.outputs.channel }}"
+          else
+            CHANNEL="${{ steps.parse.outputs.channel }}"
+          fi
+          
+          echo "Final channel: $CHANNEL"
+          echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
+      
+      - name: Check release exists
+        if: steps.permissions.outputs.result == 'true' && steps.version.outputs.has_release != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `❌ 未找到版本标签。请先执行 \`/release\` 命令创建版本。`
+            });
+            core.setFailed('No release found');
+      
+      # ============ npm 发布流程 ============
+      - name: Setup Node.js for npm
+        if: |
+          steps.permissions.outputs.result == 'true' && 
+          steps.version.outputs.has_release == 'true' &&
+          steps.channel.outputs.channel == 'npm'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+      
+      - name: Publish to npm
+        if: |
+          steps.permissions.outputs.result == 'true' && 
+          steps.version.outputs.has_release == 'true' &&
+          steps.channel.outputs.channel == 'npm'
+        id: npm-publish
+        run: |
+          echo "Publishing npm package..."
+          echo "Version: ${{ steps.version.outputs.version }}"
+          echo "Tag: ${{ steps.parse.outputs.npm_tag }}"
+          echo "Access: ${{ steps.parse.outputs.npm_access }}"
+          echo "Dry run: ${{ steps.parse.outputs.dry_run }}"
+          
+          # 运行发布脚本
+          chmod +x .github/workflows/commands/publish/scripts/npm.sh
+          .github/workflows/commands/publish/scripts/npm.sh \
+            --version "${{ steps.version.outputs.version }}" \
+            --tag "${{ steps.parse.outputs.npm_tag }}" \
+            --access "${{ steps.parse.outputs.npm_access }}" \
+            ${{ steps.parse.outputs.dry_run == 'true' && '--dry-run' || '' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+      
+      # ============ Docker 发布流程 ============
+      - name: Set up Docker Buildx
+        if: |
+          steps.permissions.outputs.result == 'true' && 
+          steps.version.outputs.has_release == 'true' &&
+          steps.channel.outputs.channel == 'docker'
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Log in to Docker Hub
+        if: |
+          steps.permissions.outputs.result == 'true' && 
+          steps.version.outputs.has_release == 'true' &&
+          steps.channel.outputs.channel == 'docker' &&
+          steps.parse.outputs.docker_registry == 'docker.io' &&
+          steps.parse.outputs.dry_run != 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      
+      - name: Log in to GitHub Container Registry
+        if: |
+          steps.permissions.outputs.result == 'true' && 
+          steps.version.outputs.has_release == 'true' &&
+          steps.channel.outputs.channel == 'docker' &&
+          steps.parse.outputs.docker_registry == 'ghcr.io' &&
+          steps.parse.outputs.dry_run != 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Publish Docker image
+        if: |
+          steps.permissions.outputs.result == 'true' && 
+          steps.version.outputs.has_release == 'true' &&
+          steps.channel.outputs.channel == 'docker'
+        id: docker-publish
+        run: |
+          echo "Publishing Docker image..."
+          echo "Version: ${{ steps.version.outputs.version }}"
+          echo "Registry: ${{ steps.parse.outputs.docker_registry }}"
+          echo "Tag: ${{ steps.parse.outputs.docker_tag }}"
+          echo "Platform: ${{ steps.parse.outputs.docker_platform }}"
+          echo "Dry run: ${{ steps.parse.outputs.dry_run }}"
+          
+          # 运行发布脚本
+          chmod +x .github/workflows/commands/publish/scripts/docker.sh
+          .github/workflows/commands/publish/scripts/docker.sh \
+            --version "${{ steps.version.outputs.version }}" \
+            --registry "${{ steps.parse.outputs.docker_registry }}" \
+            --tag "${{ steps.parse.outputs.docker_tag }}" \
+            --platform "${{ steps.parse.outputs.docker_platform }}" \
+            ${{ steps.parse.outputs.dry_run == 'true' && '--dry-run' || '' }}
+      
+      # ============ 不支持的渠道处理 ============
+      - name: Handle unsupported channel
+        if: |
+          steps.permissions.outputs.result == 'true' && 
+          steps.channel.outputs.channel == 'unsupported'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `⚠️ 检测到的项目类型暂不支持自动发布。\n\n目前支持的发布渠道：\n- \`/publish npm\` - 发布到 npm registry\n- \`/publish docker\` - 发布到 Docker Hub`
+            });
+      
+      - name: Handle unknown project
+        if: |
+          steps.permissions.outputs.result == 'true' && 
+          steps.channel.outputs.channel == 'unknown'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `❌ 无法自动检测项目类型。\n\n请显式指定发布渠道：\n- \`/publish npm\` - 发布到 npm registry\n- \`/publish docker\` - 发布到 Docker Hub`
+            });
+      
+      # ============ 成功反馈 ============
+      - name: Comment success
+        if: |
+          steps.permissions.outputs.result == 'true' && 
+          steps.version.outputs.has_release == 'true' &&
+          (steps.npm-publish.outcome == 'success' || steps.docker-publish.outcome == 'success')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const channel = '${{ steps.channel.outputs.channel }}';
+            const version = '${{ steps.version.outputs.version }}';
+            const dryRun = '${{ steps.parse.outputs.dry_run }}' === 'true';
+            
+            let message = '';
+            
+            if (dryRun) {
+              message = `✅ 发布预览成功！\n\n`;
+              message += `**版本**: ${version}\n`;
+              message += `**渠道**: ${channel}\n\n`;
+              message += `这是预览模式，实际未发布。移除 \`--dry-run\` 参数以执行真正的发布。`;
+            } else {
+              if (channel === 'npm') {
+                const tag = '${{ steps.parse.outputs.npm_tag }}';
+                const packageName = require('./package.json').name;
+                message = `🎉 成功发布到 npm!\n\n`;
+                message += `**包名**: ${packageName}\n`;
+                message += `**版本**: ${version}\n`;
+                message += `**标签**: ${tag}\n\n`;
+                message += `安装命令:\n\`\`\`bash\nnpm install ${packageName}@${tag}\n\`\`\``;
+              } else if (channel === 'docker') {
+                const registry = '${{ steps.parse.outputs.docker_registry }}';
+                const tag = '${{ steps.parse.outputs.docker_tag }}';
+                const imageName = `${registry}/${context.repo.owner}/${context.repo.repo}`;
+                message = `🎉 成功发布到 Docker!\n\n`;
+                message += `**镜像**: ${imageName}\n`;
+                message += `**版本**: ${version}\n`;
+                message += `**标签**: ${tag}\n\n`;
+                message += `拉取命令:\n\`\`\`bash\ndocker pull ${imageName}:${tag}\n\`\`\``;
+              }
+            }
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: message
+            });
