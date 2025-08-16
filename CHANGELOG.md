@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.2
+
+### Patch Changes
+
+- aed9c2a: feat: 通用流程
+
+  Contributed by @deepracticexs via #75
+
+## 0.2.2
+
+### Patch Changes
+
+- aed9c2a: feat: 通用流程
+
+  Contributed by @deepracticexs via #75
+
 ## 0.2.1
 
 ### Patch Changes
