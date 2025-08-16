@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.0
+
+### Minor Changes
+
+- 6970fe9: feat: 完整流程验证测试 - 20250816-1553
+
+  Contributed by @deepracticexs via #68
+
+## 0.2.0
+
+### Minor Changes
+
+- 6970fe9: feat: 完整流程验证测试 - 20250816-1553
+
+  Contributed by @deepracticexs via #68
+
 ## 0.1.6
 
 ### Patch Changes
