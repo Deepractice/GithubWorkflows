@@ -2,13 +2,11 @@
   "action": "created",
   "issue": {
     "number": 207,
-    "pull_request": {
-      "url": "https://api.github.com/repos/test-owner/test-repo/pulls/207"
-    }
+    "pull_request": null
   },
   "comment": {
     "id": 7,
-    "body": "/publish",
+    "body": "/deploy npm --tag dev --dry-run",
     "user": {
       "login": "test-user"
     }

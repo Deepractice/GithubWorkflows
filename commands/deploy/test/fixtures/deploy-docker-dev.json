@@ -1,0 +1,21 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 204,
+    "pull_request": null
+  },
+  "comment": {
+    "id": 4,
+    "body": "/deploy docker --tag dev",
+    "user": {
+      "login": "test-user"
+    }
+  },
+  "repository": {
+    "owner": {
+      "login": "test-owner"
+    },
+    "name": "test-repo",
+    "default_branch": "main"
+  }
+}

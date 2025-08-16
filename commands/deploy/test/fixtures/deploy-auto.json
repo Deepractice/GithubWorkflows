@@ -1,16 +1,16 @@
 {
   "action": "created",
   "issue": {
-    "number": 205,
+    "number": 208,
     "pull_request": {
-      "url": "https://api.github.com/repos/test-owner/test-repo/pulls/205"
+      "url": "https://api.github.com/repos/test-owner/test-repo/pulls/208"
     }
   },
   "comment": {
-    "id": 5,
-    "body": "/publish docker --registry ghcr.io --tag latest",
+    "id": 8,
+    "body": "/deploy npm --tag dev --auto",
     "user": {
-      "login": "test-user"
+      "login": "github-actions[bot]"
     }
   },
   "repository": {

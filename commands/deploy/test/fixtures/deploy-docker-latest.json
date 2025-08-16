@@ -1,14 +1,12 @@
 {
   "action": "created",
   "issue": {
-    "number": 206,
-    "pull_request": {
-      "url": "https://api.github.com/repos/test-owner/test-repo/pulls/206"
-    }
+    "number": 205,
+    "pull_request": null
   },
   "comment": {
-    "id": 6,
-    "body": "/publish docker --platform linux/amd64,linux/arm64 --dry-run",
+    "id": 5,
+    "body": "/deploy docker --tag latest",
     "user": {
       "login": "test-user"
     }

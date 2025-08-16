@@ -14,15 +14,16 @@ components:
     - test       # /test - 运行测试
     - changeset  # /changeset - 声明变更（默认自动分析）
     - release    # /release - 创建版本
-    - publish    # /publish - 发布到 NPM
+    - deploy     # /deploy - 部署到 NPM 或 Docker
   
   # 事件触发器（透明的自动化）
   # 所有事件通过发送命令评论来触发对应操作，保持完全透明
   events:
     - pr-opened-develop   # PR 到 develop 时 → 触发 /changeset --auto
     - pr-opened-main      # PR 到 main 时 → 触发 /release beta
-    - pr-merged-develop   # PR 合并到 develop → 触发 /start release --preview
-    - pr-merged-main      # PR 合并到 main → 可能触发 publish
+    - pr-merged-develop   # PR 合并到 develop → 触发 /deploy dev
+    - pr-merged-main      # PR 合并到 main → 触发 /release
+    - release-created     # Release 创建时 → 触发 /deploy beta 或 latest
   
   # Issue 标签
   labels:

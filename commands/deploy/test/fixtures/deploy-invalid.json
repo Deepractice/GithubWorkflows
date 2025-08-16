@@ -1,14 +1,12 @@
 {
   "action": "created",
   "issue": {
-    "number": 204,
-    "pull_request": {
-      "url": "https://api.github.com/repos/test-owner/test-repo/pulls/204"
-    }
+    "number": 206,
+    "pull_request": null
   },
   "comment": {
-    "id": 4,
-    "body": "/publish docker",
+    "id": 6,
+    "body": "/deploy",
     "user": {
       "login": "test-user"
     }

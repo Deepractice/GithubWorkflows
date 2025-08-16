@@ -2,13 +2,11 @@
   "action": "created",
   "issue": {
     "number": 202,
-    "pull_request": {
-      "url": "https://api.github.com/repos/test-owner/test-repo/pulls/202"
-    }
+    "pull_request": null
   },
   "comment": {
     "id": 2,
-    "body": "/publish npm --tag beta",
+    "body": "/deploy npm --tag beta",
     "user": {
       "login": "test-user"
     }
