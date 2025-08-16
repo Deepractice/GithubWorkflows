@@ -297,20 +297,21 @@ jobs:
           steps.permissions.outputs.result == 'true' && 
           steps.validate.outputs.valid == 'true' &&
           steps.parse.outputs.target == 'docker' &&
-          steps.parse.outputs.dry_run != 'true' &&
-          secrets.DOCKER_USERNAME != ''
+          steps.parse.outputs.dry_run != 'true'
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
+        continue-on-error: true
       
       - name: Login to GitHub Container Registry
         if: |
           steps.permissions.outputs.result == 'true' && 
           steps.validate.outputs.valid == 'true' &&
           steps.parse.outputs.target == 'docker' &&
-          steps.parse.outputs.dry_run != 'true' &&
-          secrets.DOCKER_USERNAME == ''
+          steps.parse.outputs.dry_run != 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -324,7 +325,9 @@ jobs:
           steps.parse.outputs.target == 'docker'
         id: deploy-docker
         env:
-          DOCKER_TOKEN: ${{ secrets.DOCKER_TOKEN || secrets.GITHUB_TOKEN }}
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Copy docker deploy script
           cp commands/deploy/scripts/docker.sh ./
@@ -333,11 +336,13 @@ jobs:
           TAG="${{ steps.parse.outputs.tag }}"
           DRY_RUN="${{ steps.parse.outputs.dry_run }}"
           
-          # Determine registry
-          if [ -n "${{ secrets.DOCKER_USERNAME }}" ]; then
+          # Determine registry based on available credentials
+          if [ -n "$DOCKER_USERNAME" ]; then
             REGISTRY="docker.io"
+            echo "📦 Using Docker Hub registry"
           else
             REGISTRY="ghcr.io"
+            echo "📦 Using GitHub Container Registry"
           fi
           
           ./docker.sh --tag "$TAG" --registry "$REGISTRY" --dry-run "$DRY_RUN"
