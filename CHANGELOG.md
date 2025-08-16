@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.1
+
+### Patch Changes
+
+- 4e2655f: feat: 测试流程
+
+  Contributed by @deepracticexs via #72
+
+## 0.2.1
+
+### Patch Changes
+
+- 4e2655f: feat: 测试流程
+
+  Contributed by @deepracticexs via #72
+
 ## 0.2.0
 
 ### Minor Changes
