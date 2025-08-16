@@ -68,7 +68,6 @@ for branch in $(git branch -r | grep 'origin/release/' | sed 's/origin\///'); do
             git add -A
             git commit -m "$MSG (force sync from main)"
         }
-    }
     
     git push origin $branch
 done
