@@ -26,16 +26,20 @@ echo "📌 同步到 develop 分支..."
 git checkout develop
 git pull origin develop  # 确保是最新的
 
-# 尝试 cherry-pick，如果失败则使用 merge 策略
-if ! git cherry-pick $MAIN_HASH; then
-    echo "⚠️  Cherry-pick 失败，尝试 merge 策略..."
-    git cherry-pick --abort
+# 直接使用 merge 而不是 cherry-pick，保持提交历史一致
+if ! git merge $MAIN_HASH --no-edit; then
+    echo "⚠️  Merge 有冲突，尝试自动解决..."
     
-    # 使用 merge 策略，接受 main 的工作流更改
-    git merge $MAIN_HASH --no-edit --strategy-option=theirs || {
-        echo "❌ Merge 也失败了，尝试强制同步工作流文件..."
+    # 对于工作流文件，总是使用 main 的版本
+    git checkout main -- .github/workflows/ commands/ events/
+    git add -A
+    
+    # 继续合并
+    git commit --no-edit || {
+        echo "❌ 合并失败，尝试强制同步..."
+        git merge --abort
         
-        # 直接从 main 复制工作流文件
+        # 强制同步工作流文件
         git checkout main -- .github/workflows/ commands/ events/
         git add -A
         git commit -m "$MSG (force sync from main)"

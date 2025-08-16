@@ -88,6 +88,53 @@ jobs:
             
             console.log('✅ Triggered /release for production');
             
+      - name: Sync main back to develop
+        if: steps.check.outputs.is_release == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          script: |
+            // Wait for release to complete
+            await new Promise(resolve => setTimeout(resolve, 10000));
+            
+            // Create a sync PR from main to develop
+            try {
+              const { data: pr } = await github.rest.pulls.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: '🔄 Sync: Merge main back to develop after release',
+                head: 'main',
+                base: 'develop',
+                body: `## Automated Sync
+                
+                This PR synchronizes changes from main back to develop after release.
+                
+                ### Changes included:
+                - Cleaned changesets
+                - Updated version numbers
+                - Release documentation
+                
+                ### Auto-merge:
+                This PR will be automatically merged to keep branches in sync.`
+              });
+              
+              console.log(`✅ Created sync PR #${pr.number}`);
+              
+              // Auto-merge the sync PR
+              await github.rest.pulls.merge({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+                merge_method: 'merge',
+                commit_title: 'chore: sync main back to develop after release'
+              });
+              
+              console.log(`✅ Auto-merged sync PR #${pr.number}`);
+            } catch (error) {
+              console.log(`⚠️ Could not create/merge sync PR: ${error.message}`);
+              console.log('Manual sync may be required');
+            }
+            
       - name: Delete release branch
         if: steps.check.outputs.is_release == 'true'
         uses: actions/github-script@v7

@@ -486,6 +486,18 @@ jobs:
           git add .
           git diff --cached --quiet || git commit -m "chore: clean changesets after release"
           git push
+          
+          # Also clean lock file from develop branch
+          echo "Cleaning prerelease.lock from develop branch..."
+          git fetch origin develop
+          git checkout develop
+          if [ -f ".changeset/prerelease.lock" ]; then
+            rm ".changeset/prerelease.lock"
+            git add .changeset/prerelease.lock
+            git commit -m "chore: remove prerelease.lock after release"
+            git push origin develop
+          fi
+          git checkout -
       
       - name: Create GitHub Release
         if: |
