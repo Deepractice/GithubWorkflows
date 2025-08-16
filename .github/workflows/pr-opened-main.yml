@@ -22,8 +22,10 @@ jobs:
           script: |
             const pr = context.payload.pull_request;
             
-            // Skip if PR is from a bot (unless it's a release bot)
-            if (pr.user.type === 'Bot' && !pr.user.login.includes('release')) {
+            // Skip if PR is from a bot (unless it's github-actions or a release bot)
+            if (pr.user.type === 'Bot' && 
+                !pr.user.login.includes('github-actions') && 
+                !pr.user.login.includes('release')) {
               console.log('Skipping: PR is from a non-release bot');
               core.setOutput('should_trigger', 'false');
               return;
