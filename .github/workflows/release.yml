@@ -454,7 +454,7 @@ jobs:
           EOF
             
             git add "$LOCK_FILE"
-            git commit -m "chore: update version lock to $VERSION"
+            git diff --cached --quiet || git commit -m "chore: update version lock to $VERSION"
             git push
           fi
       
@@ -484,7 +484,7 @@ jobs:
           fi
           
           git add .
-          git commit -m "chore: clean changesets after release"
+          git diff --cached --quiet || git commit -m "chore: clean changesets after release"
           git push
       
       - name: Create GitHub Release
@@ -517,6 +517,7 @@ jobs:
             gh release create "v$VERSION" \
               --title "v$VERSION" \
               --notes "$CHANGELOG_CONTENT" \
+              --latest \
               --target "${{ steps.branch.outputs.branch }}"
           fi
       

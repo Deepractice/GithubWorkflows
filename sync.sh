@@ -22,17 +22,50 @@ git add -A && git commit -m "$MSG" && git push origin main
 MAIN_HASH=$(git rev-parse HEAD)
 
 # 2. 同步到 develop 分支
+echo "📌 同步到 develop 分支..."
 git checkout develop
 git pull origin develop  # 确保是最新的
-git cherry-pick $MAIN_HASH || git cherry-pick --abort  # 如果有冲突就跳过
+
+# 尝试 cherry-pick，如果失败则使用 merge 策略
+if ! git cherry-pick $MAIN_HASH; then
+    echo "⚠️  Cherry-pick 失败，尝试 merge 策略..."
+    git cherry-pick --abort
+    
+    # 使用 merge 策略，接受 main 的工作流更改
+    git merge $MAIN_HASH --no-edit --strategy-option=theirs || {
+        echo "❌ Merge 也失败了，尝试强制同步工作流文件..."
+        
+        # 直接从 main 复制工作流文件
+        git checkout main -- .github/workflows/ commands/ events/
+        git add -A
+        git commit -m "$MSG (force sync from main)"
+    }
+fi
+
 git push origin develop
 
 # 3. 同步到 release 分支（如果存在）
 for branch in $(git branch -r | grep 'origin/release/' | sed 's/origin\///'); do
-    echo "同步到 $branch..."
+    echo "📌 同步到 $branch..."
     git checkout $branch
     git pull origin $branch
-    git cherry-pick $MAIN_HASH || git cherry-pick --abort
+    
+    # 同样的策略
+    if ! git cherry-pick $MAIN_HASH; then
+        echo "⚠️  Cherry-pick 失败，尝试 merge 策略..."
+        git cherry-pick --abort
+        
+        # 使用 merge 策略
+        git merge $MAIN_HASH --no-edit --strategy-option=theirs || {
+            echo "❌ Merge 也失败了，尝试强制同步工作流文件..."
+            
+            # 直接从 main 复制工作流文件
+            git checkout main -- .github/workflows/ commands/ events/
+            git add -A
+            git commit -m "$MSG (force sync from main)"
+        }
+    }
+    
     git push origin $branch
 done
 
@@ -41,3 +74,12 @@ git checkout main
 
 echo "✅ 同步完成"
 echo "Main commit: $MAIN_HASH"
+
+# 显示同步状态
+echo ""
+echo "📊 同步状态检查："
+echo "Main:    $(git rev-parse --short HEAD)"
+echo "Develop: $(git rev-parse --short origin/develop)"
+for branch in $(git branch -r | grep 'origin/release/' | sed 's/origin\///'); do
+    echo "$branch: $(git rev-parse --short origin/$branch)"
+done

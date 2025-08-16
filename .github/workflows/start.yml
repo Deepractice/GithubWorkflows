@@ -818,10 +818,10 @@ jobs:
             
             ### Release Checklist
             - [ ] Run tests: \`/test\`
-            - [ ] Create beta release: \`/release beta\`
+            - [ ] Create beta release: \`/release --prerelease beta\`
             - [ ] Publish beta: \`/publish npm --tag next\`
             - [ ] Test beta version
-            - [ ] Create RC if needed: \`/release rc\`
+            - [ ] Create RC if needed: \`/release --prerelease rc\`
             - [ ] Final review
             - [ ] Approve and merge PR
             - [ ] Create final release: \`/release\`
@@ -938,7 +938,7 @@ jobs:
               ### Next Steps:
               1. Switch to release branch: \`git checkout ${branch}\`
               2. Run tests: \`/test\`
-              3. Create beta release: \`/release beta\`
+              3. Create beta release: \`/release --prerelease beta\`
               4. Publish beta: \`/publish npm --tag next\`
               5. Test the beta version
               6. When ready, merge PR to main

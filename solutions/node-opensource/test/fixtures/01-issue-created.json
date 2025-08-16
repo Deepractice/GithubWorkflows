@@ -1,0 +1,19 @@
+{
+  "action": "opened",
+  "issue": {
+    "number": 100,
+    "title": "Test: Complete Workflow",
+    "body": "This is a test issue for the complete workflow",
+    "user": {
+      "login": "test-user"
+    },
+    "state": "open"
+  },
+  "repository": {
+    "owner": {
+      "login": "test-owner"
+    },
+    "name": "test-repo",
+    "default_branch": "main"
+  }
+}

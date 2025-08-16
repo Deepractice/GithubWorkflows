@@ -39,30 +39,30 @@ if [ -f "package.json" ]; then
         fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\\n');
         console.log('Updated package.json to version ' + pkg.version);
       "
-    
-    # Update lock files only if package.json was changed
-    if [ -f "package-lock.json" ]; then
-      npm install --package-lock-only --silent
-      echo "Updated package-lock.json"
-    fi
-    
-    if [ -f "yarn.lock" ]; then
-      yarn install --mode update-lockfile --silent
-      echo "Updated yarn.lock"
-    fi
-    
-    if [ -f "pnpm-lock.yaml" ]; then
-      if command -v pnpm &> /dev/null; then
-        pnpm install --lockfile-only --silent
-        echo "Updated pnpm-lock.yaml"
-      else
-        echo "Warning: pnpm-lock.yaml exists but pnpm is not installed"
+      
+      # Update lock files only if package.json was changed
+      if [ -f "package-lock.json" ]; then
+        npm install --package-lock-only --silent
+        echo "Updated package-lock.json"
       fi
-    fi
-    
-    # Commit only if there were changes
-    git add package.json package-lock.json yarn.lock pnpm-lock.yaml 2>/dev/null || true
-    git commit -m "chore(release): v$VERSION
+      
+      if [ -f "yarn.lock" ]; then
+        yarn install --mode update-lockfile --silent
+        echo "Updated yarn.lock"
+      fi
+      
+      if [ -f "pnpm-lock.yaml" ]; then
+        if command -v pnpm &> /dev/null; then
+          pnpm install --lockfile-only --silent
+          echo "Updated pnpm-lock.yaml"
+        else
+          echo "Warning: pnpm-lock.yaml exists but pnpm is not installed"
+        fi
+      fi
+      
+      # Commit only if there were changes
+      git add package.json package-lock.json yarn.lock pnpm-lock.yaml 2>/dev/null || true
+      git commit -m "chore(release): v$VERSION
 
 [skip ci]" || echo "No changes to commit"
     fi
