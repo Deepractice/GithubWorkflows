@@ -1,0 +1,76 @@
+name: 'Setup Node Environment'
+description: '设置 Node.js 环境，包括缓存和依赖安装'
+inputs:
+  node-version:
+    description: 'Node.js 版本'
+    required: false
+    default: '18'
+  package-manager:
+    description: '包管理器 (npm, yarn, pnpm)'
+    required: false
+    default: 'npm'
+  working-directory:
+    description: '工作目录'
+    required: false
+    default: '.'
+
+outputs:
+  cache-hit:
+    description: '是否命中缓存'
+    value: ${{ steps.cache.outputs.cache-hit }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        
+    - name: Detect lockfile
+      id: detect
+      shell: bash
+      run: |
+        cd ${{ inputs.working-directory }}
+        if [ -f "pnpm-lock.yaml" ]; then
+          echo "manager=pnpm" >> $GITHUB_OUTPUT
+          echo "lockfile=pnpm-lock.yaml" >> $GITHUB_OUTPUT
+        elif [ -f "yarn.lock" ]; then
+          echo "manager=yarn" >> $GITHUB_OUTPUT
+          echo "lockfile=yarn.lock" >> $GITHUB_OUTPUT
+        else
+          echo "manager=npm" >> $GITHUB_OUTPUT
+          echo "lockfile=package-lock.json" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Setup pnpm (if needed)
+      if: steps.detect.outputs.manager == 'pnpm'
+      uses: pnpm/action-setup@v2
+      with:
+        version: 8
+        
+    - name: Cache dependencies
+      id: cache
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.npm
+          ~/.yarn
+          ~/.pnpm-store
+          ${{ inputs.working-directory }}/node_modules
+        key: ${{ runner.os }}-${{ steps.detect.outputs.manager }}-${{ hashFiles(format('{0}/{1}', inputs.working-directory, steps.detect.outputs.lockfile)) }}
+        restore-keys: |
+          ${{ runner.os }}-${{ steps.detect.outputs.manager }}-
+          
+    - name: Install dependencies
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        cd ${{ inputs.working-directory }}
+        if [ "${{ steps.detect.outputs.manager }}" = "pnpm" ]; then
+          pnpm install --frozen-lockfile
+        elif [ "${{ steps.detect.outputs.manager }}" = "yarn" ]; then
+          yarn install --frozen-lockfile
+        else
+          npm ci
+        fi
